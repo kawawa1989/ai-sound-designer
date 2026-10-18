@@ -56,5 +56,5 @@ plugins = ["pydantic.mypy"]
 files = ["src", "tests"]
 
 [[tool.mypy.overrides]]
-module = ["librosa.*", "soundfile.*", "sounddevice.*", "mido.*", "rtmidi.*"]
+module = ["librosa.*", "soundfile.*", "sounddevice.*", "mido.*", "rtmidi.*", "scipy.*"]
 ignore_missing_imports = true

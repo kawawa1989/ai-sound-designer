@@ -54,6 +54,7 @@ class Speed(StrEnum):
 
 
 # --- AudioAnalysis -------------------------------------------------------------
+# 時間はすべて解析対象（トリム後）の先頭からの秒。レベルの dB は特記なければピーク基準。
 
 
 class SourceInfo(FrozenModel):
@@ -62,39 +63,112 @@ class SourceInfo(FrozenModel):
     sample_rate: int = Field(gt=0)
     channels: int = Field(gt=0)
     duration_s: float = Field(ge=0)
+    trim_start_s: float = Field(ge=0, default=0.0)  # 元ファイル上で解析対象が始まる位置
+    analyzed_duration_s: float = Field(ge=0, default=0.0)
+
+
+class AnalysisSettings(FrozenModel):
+    """再現性のための解析条件。"""
+
+    analyzer_version: str
+    sample_rate: int
+    hop_s: float
+    n_fft: int
+
+
+class LevelInfo(FrozenModel):
+    peak_dbfs: float
+    rms_dbfs: float
+    noise_floor_db: float  # ピーク基準
+    snr_db: float
+    snr_is_lower_bound: bool  # 末尾まで減衰しきっていて背景ノイズを直接測れない場合 True
+    clip_ratio: float = Field(ge=0, le=1)
+    dc_offset: float
 
 
 class PitchEstimate(FrozenModel):
     f0_hz: float = Field(gt=0)
     note: str
     cents_offset: float
+    stability_cents: float = Field(ge=0)  # 有声区間の f0 の標準偏差
+    voiced_ratio: float = Field(ge=0, le=1)
     confidence: float = Field(ge=0, le=1)
 
 
 class EnvelopeFeatures(FrozenModel):
+    """RMS 包絡から求めた発音の時間構造。
+
+    attack_ms: ピーク振幅の 10%→90% の立ち上がり時間
+    decay_ms: ピークからサステイン到達まで（サステインなしなら -20 dB 到達まで）
+    sustain_level_db: サステイン区間の中央値（ピーク基準、サステインなしなら None）
+    release_ms: サステイン終了から 20 dB 減衰するまで（未到達なら None）
+    decay_rate_db_per_s: ピーク後の減衰の傾き（負の値ほど速く減衰）
+    """
+
+    onset_s: float
+    peak_s: float
     attack_ms: float | None = None
     decay_ms: float | None = None
+    sustained: bool
     sustain_level_db: float | None = None
+    sustain_start_s: float | None = None
+    release_start_s: float | None = None
     release_ms: float | None = None
+    decay_rate_db_per_s: float | None = None
     confidence: float = Field(ge=0, le=1)
 
 
 class SpectralFeatures(FrozenModel):
-    centroid_hz_mean: float | None = None
-    centroid_hz_start: float | None = None
-    centroid_hz_end: float | None = None
-    flatness_mean: float | None = None
-    inharmonicity: float | None = None
+    """発音区間のスペクトル特徴。start は発音直後 100 ms、end は発音区間の最後の 25%。"""
+
+    centroid_hz_mean: float
+    centroid_hz_start: float
+    centroid_hz_end: float
+    centroid_ratio_to_f0: float | None = None  # ピッチによらない明るさの目安
+    brightness_change_ratio: float  # end / start（1 未満なら時間とともに暗くなる）
+    rolloff_hz_mean: float
+    flatness_mean: float  # 0（純音的）〜 1（ノイズ的）
     confidence: float = Field(ge=0, le=1)
+
+
+class Partial(FrozenModel):
+    number: int = Field(ge=1)
+    freq_hz: float
+    level_db: float  # 最大の倍音を 0 dB とする
+    deviation_cents: float  # number × f0 からのずれ
+
+
+class HarmonicFeatures(FrozenModel):
+    window_start_s: float
+    window_end_s: float
+    partials: tuple[Partial, ...]
+    harmonic_energy_ratio: float = Field(ge=0, le=1)  # 倍音位置に集まるエネルギーの割合
+    inharmonicity_cents: float = Field(ge=0)  # 倍音のずれのエネルギー加重平均
+    odd_even_ratio_db: float | None = None  # 奇数次と偶数次（基音除く）のエネルギー比
+    confidence: float = Field(ge=0, le=1)
+
+
+class TimeSeries(FrozenModel):
+    """フレームごとの値。None は音量が小さく信頼できないフレーム。"""
+
+    hop_s: float
+    rms_db: tuple[float | None, ...]
+    centroid_hz: tuple[float | None, ...]
+    flatness: tuple[float | None, ...]
+    harmonic_levels_db: tuple[tuple[float | None, ...], ...] = ()  # [倍音番号-1][フレーム]
 
 
 class AudioAnalysis(FrozenModel):
     schema_version: Literal["1.0"] = SCHEMA_VERSION
     analysis_id: str
     source: SourceInfo
+    settings: AnalysisSettings
+    levels: LevelInfo
     pitch: PitchEstimate | None = None
     envelope: EnvelopeFeatures | None = None
     spectral: SpectralFeatures | None = None
+    harmonics: HarmonicFeatures | None = None
+    timeseries: TimeSeries | None = None
     issues: tuple[Issue, ...] = ()
 
 

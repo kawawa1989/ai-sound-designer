@@ -18,6 +18,16 @@ from matplotlib.figure import Figure  # noqa: E402
 from synth_ai.core.audio import features as F  # noqa: E402
 from synth_ai.core.audio.analyze import AnalysisResult  # noqa: E402
 
+__all__ = [
+    "SERIES",
+    "SURFACE",
+    "TEXT",
+    "TEXT_SECONDARY",
+    "plot_all",
+    "plt",
+    "save_figure",
+]
+
 JAPANESE_FONTS = ("Hiragino Sans", "BIZ UDGothic", "Noto Sans CJK JP", "IPAexGothic", "Yu Gothic")
 
 
@@ -103,7 +113,7 @@ def plot_envelope(result: AnalysisResult, path: Path) -> Path:
     ax_env.set_xlabel("時間 [s]")
     for ax in (ax_wave, ax_env):
         _mark_segments(ax, result)
-    return _save(fig, path)
+    return save_figure(fig, path)
 
 
 def plot_spectrogram(result: AnalysisResult, path: Path) -> Path:
@@ -126,7 +136,7 @@ def plot_spectrogram(result: AnalysisResult, path: Path) -> Path:
     ax.set_ylabel("周波数 [Hz]")
     ax.grid(False)
     fig.colorbar(mesh, ax=ax, label="dB（最大 0）", pad=0.01)
-    return _save(fig, path)
+    return save_figure(fig, path)
 
 
 def plot_spectrum(result: AnalysisResult, path: Path) -> Path:
@@ -155,7 +165,7 @@ def plot_spectrum(result: AnalysisResult, path: Path) -> Path:
     ax.set_title(f"スペクトル（{start:.2f}〜{end:.2f} s の定常区間）")
     ax.set_xlabel("周波数 [Hz]")
     ax.set_ylabel("dB（最大 0）")
-    return _save(fig, path)
+    return save_figure(fig, path)
 
 
 def plot_harmonics(result: AnalysisResult, path: Path) -> Path:
@@ -176,10 +186,10 @@ def plot_harmonics(result: AnalysisResult, path: Path) -> Path:
     ax.set_title("倍音レベルの時間変化")
     ax.set_xlabel("時間 [s]")
     ax.set_ylabel("dB（最大 0）")
-    return _save(fig, path)
+    return save_figure(fig, path)
 
 
-def _save(fig: Figure, path: Path) -> Path:
+def save_figure(fig: Figure, path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
     fig.savefig(path)

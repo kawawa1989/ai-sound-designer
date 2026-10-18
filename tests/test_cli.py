@@ -64,3 +64,28 @@ def test_recipe_errors(tmp_path: Path) -> None:
     assert runner.invoke(app, ["spec", str(tmp_path)]).exit_code == 2
     result = runner.invoke(app, ["recipe", str(tmp_path), "--synth", "nope"])
     assert result.exit_code == 2
+
+
+def test_compare_and_trial_commands(tmp_path: Path) -> None:
+    runner = CliRunner()
+    ref = write_wav(tmp_path / "ref.wav", saw())
+    take = write_wav(tmp_path / "take.wav", saw() * 0.5)
+    out = tmp_path / "run"
+    assert runner.invoke(app, ["analyze", str(ref), "-o", str(out), "--no-plots"]).exit_code == 0
+    assert (out / "reference.wav").is_file()
+    result = runner.invoke(app, ["compare", str(out), str(take), "--no-plots"])
+    assert result.exit_code == 0, result.output
+    assert "比較レポート: 試行 001" in result.output
+    result = runner.invoke(
+        app, ["trial", "note", str(out), "1", "--closeness", "4", "--memo", "近い"]
+    )
+    assert result.exit_code == 0, result.output
+    result = runner.invoke(app, ["trial", "list", str(out)])
+    assert "[001]" in result.output and "近さ 4" in result.output and "近い" in result.output
+    assert runner.invoke(app, ["trial", "note", str(out), "9", "--memo", "x"]).exit_code == 2
+    assert runner.invoke(app, ["trial", "note", str(out), "1", "--closeness", "7"]).exit_code != 0
+
+
+def test_compare_errors(tmp_path: Path) -> None:
+    result = CliRunner().invoke(app, ["compare", str(tmp_path), str(tmp_path / "x.wav")])
+    assert result.exit_code == 2

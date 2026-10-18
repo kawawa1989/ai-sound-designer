@@ -114,6 +114,13 @@ def load_audio(path: Path, target_sr: int = TARGET_SR) -> LoadedAudio:
     )
     start, end = trim_silence(mono, target_sr)
     trimmed = mono[start:end]
+    # 先頭から音が鳴っている場合も、発音前に PRE_ROLL_S の無音があるようにそろえる
+    # （包絡の先頭フレームが欠けて、アタックの測定が素材によってぶれるのを防ぐ）
+    peak_t = float(np.max(np.abs(trimmed)))
+    first = int(np.flatnonzero(np.abs(trimmed) > peak_t * 10 ** (SILENCE_DB / 20))[0])
+    missing = int(PRE_ROLL_S * target_sr) - first
+    if missing > 0:
+        trimmed = np.concatenate([np.zeros(missing), trimmed])
     analyzed = len(trimmed) / target_sr
     if analyzed < MIN_DURATION_S:
         raise AudioLoadError(f"音が短すぎます（{analyzed * 1000:.0f} ms、100 ms 以上が必要）")

@@ -24,6 +24,7 @@ class FakeSynthAdapter:
             midi_notes=CapabilityStatus.UNSUPPORTED,
             parameter_read=CapabilityStatus.UNSUPPORTED,
             parameter_write=CapabilityStatus.UNSUPPORTED,
+            adjustment_suggestions=CapabilityStatus.UNSUPPORTED,
             available_engines=("fake-sub", "fake-sampler"),
         )
 

@@ -11,6 +11,7 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
+from synth_ai.core.comparison.models import AdjustmentSuggestion, Difference
 from synth_ai.core.sound_spec.models import PatchRecipe, SoundSpec
 
 
@@ -29,6 +30,7 @@ class Capabilities(BaseModel):
     midi_notes: CapabilityStatus
     parameter_read: CapabilityStatus
     parameter_write: CapabilityStatus
+    adjustment_suggestions: CapabilityStatus  # 比較結果から具体的なパラメータ調整を提案できる
     available_engines: tuple[str, ...]
 
     def is_supported(self, name: str) -> bool:
@@ -48,3 +50,15 @@ class SynthAdapter(Protocol):
     def create_recipe(self, spec: SoundSpec) -> PatchRecipe: ...
 
     def manual_instructions(self, recipe: PatchRecipe) -> str: ...
+
+
+@runtime_checkable
+class AdjustmentAdvisor(Protocol):
+    """任意の契約。capabilities().adjustment_suggestions が supported の Adapter だけが使われる。"""
+
+    def suggest_adjustments(
+        self,
+        spec: SoundSpec,
+        differences: tuple[Difference, ...],
+        recipe: PatchRecipe | None,
+    ) -> tuple[AdjustmentSuggestion, ...]: ...

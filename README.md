@@ -17,6 +17,9 @@ cp config/local.example.yaml config/local.yaml
 uv run synth-ai analyze assets/reference/lead.wav --out runs/001/   # 参照WAVを解析
 uv run synth-ai spec runs/001/                                    # 機種非依存の SoundSpec を作る
 uv run synth-ai recipe runs/001/ --synth kronos2                   # KRONOS 用レシピを作る
+uv run synth-ai compare runs/001/ take1.wav                       # 実機の録音と比べて次の調整案を出す
+uv run synth-ai trial note runs/001/ 1 --closeness 3 --preference 4 --memo "…"  # 聴いた評価を記録
+uv run synth-ai trial list runs/001/                              # 試行の一覧
 uv run synth-ai test-signals assets/test                          # 確認用の合成テスト音を生成
 uv run synth-ai adapters                                          # 登録済み機種と Capabilities
 ```
@@ -35,6 +38,12 @@ uv run synth-ai adapters                                          # 登録済み
 `recipe` は `recipes/<機種>/recipe.json` と `recipe.md`（手順書）を出力します。
 KRONOS の具体的なパラメータ手順には、公式資料から作るパラメータ表が必要です
 （`docs/kronos_parameter_table.md`）。表がない間は、調整する項目と音響上の目標だけを示します。
+
+`compare` は録音を参照音にそろえ（発音開始・音量、音程の差は報告のみ）、特徴量・区間ごとの音量・
+区間 × 周波数帯の音色・倍音の差を出して、次の調整案を最大 3 件示します。結果は
+`runs/<id>/trials/<NNN>/`（録音のコピー、comparison.md、difference.png など）に保存され、
+`history.json` に一覧がまとまります。2 回目以降は前回からの改善・悪化も表示されます。
+目標への近さと好みは `trial note` で別々に記録します。
 
 入力は単音・明確なピッチの WAV を想定しています。和音、背景ノイズ、途中で切れた音などは
 `analysis.json` の `issues` とコンソールの「注意」に表示されます。

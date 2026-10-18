@@ -11,6 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from synth_ai.adapters.base import Capabilities, CapabilityStatus
+from synth_ai.adapters.kronos2.adjust import suggest_adjustments
 from synth_ai.adapters.kronos2.al1 import al1_intents
 from synth_ai.adapters.kronos2.engine_select import (
     AL1,
@@ -23,6 +24,7 @@ from synth_ai.adapters.kronos2.intents import Intent
 from synth_ai.adapters.kronos2.parameters import load_table, table_path
 from synth_ai.adapters.kronos2.recipe import describe_intent, describe_target, render_steps
 from synth_ai.core.calibration.models import CalibrationSet
+from synth_ai.core.comparison.models import AdjustmentSuggestion, Difference
 from synth_ai.core.sound_spec.models import (
     AlternativeApproach,
     PatchRecipe,
@@ -67,6 +69,7 @@ class Kronos2Adapter:
             midi_notes=CapabilityStatus.UNVERIFIED,
             parameter_read=CapabilityStatus.UNVERIFIED,
             parameter_write=CapabilityStatus.UNVERIFIED,
+            adjustment_suggestions=CapabilityStatus.SUPPORTED,  # 実機を操作しない提案のみ
             available_engines=ENGINES,
         )
 
@@ -116,6 +119,21 @@ class Kronos2Adapter:
                 if e.engine != chosen.engine and e.score > 0
             ),
             uncertainties=tuple(uncertainties),
+        )
+
+    def suggest_adjustments(
+        self,
+        spec: SoundSpec,
+        differences: tuple[Difference, ...],
+        recipe: PatchRecipe | None,
+    ) -> tuple[AdjustmentSuggestion, ...]:
+        engine = recipe.engine if recipe and recipe.engine in INTENT_BUILDERS else AL1
+        return suggest_adjustments(
+            spec,
+            differences,
+            recipe,
+            load_table(self._parameter_dir, engine),
+            CalibrationSet.load(self._calibration_dir, self.synth_id),
         )
 
     def manual_instructions(self, recipe: PatchRecipe) -> str:

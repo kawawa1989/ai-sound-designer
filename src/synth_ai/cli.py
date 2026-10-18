@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Annotated
 
@@ -11,6 +12,8 @@ from synth_ai import __version__
 from synth_ai.registry import ADAPTER_FACTORIES, get_adapter
 
 app = typer.Typer(no_args_is_help=True, help="AI Sound Designer")
+trial_app = typer.Typer(no_args_is_help=True, help="試行（録音と比較）の記録")
+app.add_typer(trial_app, name="trial")
 
 
 @app.command()
@@ -51,6 +54,11 @@ def analyze(
 
     save_json(result.analysis, out / "analysis.json")
     written = [out / "analysis.json"]
+    # 比較のときに同じ参照音を使えるよう、試行ディレクトリにコピーしておく
+    reference_copy = out / "reference.wav"
+    if wav.resolve() != reference_copy.resolve():
+        shutil.copyfile(wav, reference_copy)
+        written.append(reference_copy)
     if plots:
         written += plot_all(result, out)
     typer.echo(summarize(result.analysis))
@@ -101,6 +109,85 @@ def recipe(
         raise typer.Exit(code=2) from exc
     typer.echo(files.markdown_path.read_text(encoding="utf-8"))
     typer.echo(f"出力:\n  {files.json_path}\n  {files.markdown_path}")
+
+
+@app.command()
+def compare(
+    run_dir: Annotated[Path, typer.Argument(help="analyze の出力ディレクトリ")],
+    recording: Annotated[Path, typer.Argument(help="シンセで鳴らして録音した WAV")],
+    synth: Annotated[str | None, typer.Option("--synth", "-s", help="対象機種")] = "kronos2",
+    plots: Annotated[bool, typer.Option("--plots/--no-plots", help="グラフを出力する")] = True,
+) -> None:
+    """録音を参照音と比べ、差分と次の調整案を試行として保存する。"""
+    from synth_ai.core.audio.load import AudioLoadError
+    from synth_ai.core.workflow.files import MissingRunFileError
+    from synth_ai.core.workflow.trial import ReferenceMismatchError, run_trial
+
+    try:
+        adapter = get_adapter(synth) if synth else None
+        result = run_trial(run_dir, recording, adapter, plots=plots)
+    except (AudioLoadError, MissingRunFileError, ReferenceMismatchError, ValueError) as exc:
+        typer.secho(f"エラー: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(result.markdown)
+    typer.echo(f"出力: {result.directory}")
+
+
+@trial_app.command("list")
+def trial_list(
+    run_dir: Annotated[Path, typer.Argument(help="analyze の出力ディレクトリ")],
+) -> None:
+    """試行の一覧（距離、主な違い、評価）を表示する。"""
+    from synth_ai.core.history.store import rebuild_history
+
+    history = rebuild_history(run_dir)
+    if not history.trials:
+        typer.echo("試行はまだありません（synth-ai compare で追加）")
+        return
+    for t in history.trials:
+        note = t.note
+        rating = (
+            f"近さ {note.closeness or '-'} / 好み {note.preference or '-'}" if note else "未評価"
+        )
+        typer.echo(
+            f"[{t.trial:03d}] {t.created_at}  距離 {t.distance_db:.1f} dB  "
+            f"有意な差 {t.significant_differences} 件  {rating}"
+        )
+        for d in t.top_differences:
+            typer.echo(f"      - {d}")
+        if note and note.memo:
+            typer.echo(f"      メモ: {note.memo}")
+
+
+@trial_app.command("note")
+def trial_note(
+    run_dir: Annotated[Path, typer.Argument(help="analyze の出力ディレクトリ")],
+    trial: Annotated[int, typer.Argument(help="試行番号")],
+    closeness: Annotated[
+        int | None, typer.Option(min=1, max=5, help="目標への近さ（1〜5）")
+    ] = None,
+    preference: Annotated[int | None, typer.Option(min=1, max=5, help="好み（1〜5）")] = None,
+    memo: Annotated[str | None, typer.Option(help="感想・気づき")] = None,
+    change: Annotated[
+        list[str] | None, typer.Option(help="実機で変えた内容（複数回指定可）")
+    ] = None,
+) -> None:
+    """試行に人の評価を記録する。近さと好みは別々に記録する。"""
+    from synth_ai.core.history.store import save_note
+
+    try:
+        note = save_note(
+            run_dir,
+            trial,
+            closeness=closeness,
+            preference=preference,
+            memo=memo,
+            changes=tuple(change or ()),
+        )
+    except FileNotFoundError as exc:
+        typer.secho(f"エラー: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(note.model_dump_json(indent=2))
 
 
 @app.command("test-signals")

@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from synth_ai.cli import app
@@ -89,3 +90,51 @@ def test_compare_and_trial_commands(tmp_path: Path) -> None:
 def test_compare_errors(tmp_path: Path) -> None:
     result = CliRunner().invoke(app, ["compare", str(tmp_path), str(tmp_path / "x.wav")])
     assert result.exit_code == 2
+
+
+def test_capture_with_run_compares(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from synth_ai.infrastructure.capture import recorder as rec_module
+    from tests.infrastructure.fakes import FakePort, FakeRecorder
+
+    runner = CliRunner()
+    ref = write_wav(tmp_path / "ref.wav", saw(196.0))  # G3
+    out = tmp_path / "run"
+    assert runner.invoke(app, ["analyze", str(ref), "-o", str(out), "--no-plots"]).exit_code == 0
+
+    port = FakePort()
+    monkeypatch.setattr("mido.get_output_names", lambda: ["KRONOS KEYBOARD"])
+    monkeypatch.setattr("mido.open_output", lambda name: port)
+    monkeypatch.setattr(
+        rec_module, "SoundDeviceRecorder", lambda *a: FakeRecorder(lambda: saw(196.0))
+    )
+    config = tmp_path / "local.yaml"
+    config.write_text(
+        "midi:\n  output_port: KRONOS\n"
+        "test_note:\n  hold_s: 0.01\n  release_tail_s: 0\n"
+        "capture:\n  pre_roll_s: 0\n"
+    )
+    result = runner.invoke(app, ["capture", "--run", str(out), "--config", str(config)])
+    assert result.exit_code == 0, result.output
+    assert "G3" in result.output  # 参照音の音程で鳴らす
+    assert port.messages[0].note == 55
+    assert "比較レポート: 試行 001" in result.output
+    assert len(list((out / "takes").glob("take-*.wav"))) == 1
+
+
+def test_capture_requires_destination(tmp_path: Path) -> None:
+    result = CliRunner().invoke(app, ["capture", "--config", str(tmp_path / "none.yaml")])
+    assert result.exit_code == 2
+
+
+def test_devices_lists_ports(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from synth_ai.infrastructure.capture import recorder as rec_module
+
+    monkeypatch.setattr("mido.get_output_names", lambda: ["KRONOS KEYBOARD"])
+    monkeypatch.setattr(
+        rec_module, "input_devices", lambda: [rec_module.InputDevice(1, "KRONOS", 2, 48000)]
+    )
+    config = tmp_path / "c.yaml"
+    config.write_text("midi:\n  output_port: kronos\ncapture:\n  input_device: KRONOS\n")
+    result = CliRunner().invoke(app, ["devices", "--config", str(config)])
+    assert result.exit_code == 0
+    assert "* KRONOS KEYBOARD" in result.output and "* KRONOS（2 ch" in result.output

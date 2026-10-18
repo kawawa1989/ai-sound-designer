@@ -1,19 +1,22 @@
-# config/local.yaml にコピーして使う（git管理外）
+# config/local.yaml にコピーして使う（git 管理外）。
+# ポート名・デバイス名は `uv run synth-ai devices` で確認できる（部分一致で指定可）。
 synth: kronos2
 
 midi:
-  output_port: null   # 例: "KRONOS KEYBOARD"（scripts/midi_probe.py で一覧表示）
-  channel: 1
+  output_port: null   # 例: "KRONOS"。null なら MIDI を送らず、鍵盤を手で弾いて録音する
+  channel: 1          # 1〜16。KRONOS の Global MIDI Channel に合わせる
 
 capture:
-  input_device: null  # 例: "KRONOS"（scripts/record_test.py で一覧表示）
+  input_device: null  # 例: "KRONOS"。null なら OS の既定の入力
   sample_rate: 48000
   channels: 2
-  bit_depth: 24
-  peak_warn_dbfs: -1.0
+  pre_roll_s: 0.3     # 録音開始から発音までの無音
+  fade_ms: 5          # ファイル先頭・末尾のクリック防止
+  peak_warn_dbfs: -1.0   # これを超えたらクリップの恐れとして警告
+  quiet_warn_dbfs: -40.0 # これ未満なら入力の選び間違い・音量不足として警告
 
 test_note:
   note: C4
   velocity: 100
-  hold_s: 1.5
-  release_tail_s: 2.0
+  hold_s: 1.5         # Note On から Note Off まで
+  release_tail_s: 2.0 # Note Off 後に録音を続ける長さ

@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 
 from synth_ai import __version__
+
+if TYPE_CHECKING:
+    from synth_ai.config import LocalConfig
 from synth_ai.registry import ADAPTER_FACTORIES, get_adapter
 
 app = typer.Typer(no_args_is_help=True, help="AI Sound Designer")
@@ -188,6 +191,166 @@ def trial_note(
         typer.secho(f"エラー: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from exc
     typer.echo(note.model_dump_json(indent=2))
+
+
+ConfigOption = Annotated[
+    Path | None, typer.Option("--config", help="設定ファイル（既定: config/local.yaml）")
+]
+
+
+def _config(path: Path | None) -> LocalConfig:
+    from synth_ai.config import ConfigError, load_config
+
+    try:
+        return load_config(path)
+    except ConfigError as exc:
+        typer.secho(f"エラー: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+
+
+def _fail(exc: Exception) -> typer.Exit:
+    typer.secho(f"エラー: {exc}", fg=typer.colors.RED, err=True)
+    return typer.Exit(code=2)
+
+
+@app.command()
+def devices(config: ConfigOption = None) -> None:
+    """接続中の MIDI 出力ポートと録音デバイスを表示する（* は設定で選ばれているもの）。"""
+    from synth_ai.infrastructure.capture.recorder import input_devices
+    from synth_ai.infrastructure.midi.sender import output_port_names
+
+    cfg = _config(config)
+    wanted_port = (cfg.midi.output_port or "").lower()
+    wanted_input = (cfg.capture.input_device or "").lower()
+    typer.echo("MIDI 出力ポート:")
+    ports = output_port_names()
+    for name in ports:
+        mark = "*" if wanted_port and wanted_port in name.lower() else " "
+        typer.echo(f"  {mark} {name}")
+    if not ports:
+        typer.echo("    （なし）KRONOS を USB で接続し、電源が入っているか確認してください")
+    typer.echo("録音デバイス（入力）:")
+    for d in input_devices():
+        mark = "*" if wanted_input and wanted_input in d.name.lower() else " "
+        typer.echo(f"  {mark} {d.name}（{d.channels} ch、既定 {d.default_sample_rate:.0f} Hz）")
+
+
+@app.command("midi-probe")
+def midi_probe(
+    note: Annotated[str | None, typer.Option(help="音名（既定: 設定の test_note.note）")] = None,
+    velocity: Annotated[int | None, typer.Option(min=1, max=127)] = None,
+    hold: Annotated[float | None, typer.Option(help="押さえる秒数")] = None,
+    port: Annotated[str | None, typer.Option(help="MIDI 出力ポート（既定: 設定）")] = None,
+    channel: Annotated[int | None, typer.Option(min=1, max=16)] = None,
+    config: ConfigOption = None,
+) -> None:
+    """MIDI で 1 音だけ鳴らし、PC から発音できるか確かめる（Note On/Off のみ送信）。"""
+    from synth_ai.core.audio.notes import note_to_midi
+    from synth_ai.infrastructure.midi.sender import MidiError, open_sender
+
+    cfg = _config(config)
+    port_name = port or cfg.midi.output_port
+    if not port_name:
+        raise _fail(ValueError("MIDI 出力ポートが未設定です（--port または config/local.yaml）"))
+    note_name = note or cfg.test_note.note
+    try:
+        number = note_to_midi(note_name)
+        with open_sender(port_name, channel or cfg.midi.channel) as sender:
+            typer.echo(f"{port_name} に {note_name}（{number}）を送ります")
+            sender.play(number, velocity or cfg.test_note.velocity, hold or cfg.test_note.hold_s)
+    except (MidiError, ValueError) as exc:
+        raise _fail(exc) from exc
+    typer.echo("送信しました。KRONOS から音が出たか確認してください")
+
+
+@app.command()
+def capture(
+    out: Annotated[Path | None, typer.Argument(help="保存先 WAV（--run 指定時は省略可）")] = None,
+    run_dir: Annotated[
+        Path | None,
+        typer.Option("--run", help="参照音の run。音程を参照に合わせ、録音後に比較する"),
+    ] = None,
+    note: Annotated[
+        str | None, typer.Option(help="音名（既定: 参照音の音程、なければ設定）")
+    ] = None,
+    velocity: Annotated[int | None, typer.Option(min=1, max=127)] = None,
+    hold: Annotated[float | None, typer.Option(help="押さえる秒数")] = None,
+    tail: Annotated[float | None, typer.Option(help="離した後に録音を続ける秒数")] = None,
+    manual: Annotated[bool, typer.Option(help="MIDI を使わず手で弾く")] = False,
+    compare_after: Annotated[
+        bool, typer.Option("--compare/--no-compare", help="--run 指定時、録音後に比較する")
+    ] = True,
+    config: ConfigOption = None,
+) -> None:
+    """1 音を録音する。MIDI が設定されていれば PC から発音し、なければ合図に合わせて手で弾く。"""
+    from contextlib import nullcontext
+    from datetime import datetime
+
+    from synth_ai.core.audio.notes import note_to_midi
+    from synth_ai.core.sound_spec.io import load_json
+    from synth_ai.core.sound_spec.models import AudioAnalysis
+    from synth_ai.infrastructure.capture.recorder import (
+        CaptureError,
+        CaptureSettings,
+        SoundDeviceRecorder,
+        capture_note,
+        write_capture,
+    )
+    from synth_ai.infrastructure.midi.sender import MidiError, open_sender
+
+    cfg = _config(config)
+    if out is None and run_dir is None:
+        raise _fail(ValueError("保存先 WAV か --run を指定してください"))
+
+    note_name = note
+    if note_name is None and run_dir is not None:
+        analysis_path = run_dir / "analysis.json"
+        if analysis_path.is_file():
+            pitch = load_json(AudioAnalysis, analysis_path).pitch
+            if pitch is not None:
+                note_name = pitch.note
+                if pitch.confidence < 0.5:
+                    typer.echo(f"注意: 参照音のピッチ確信度が低い（{pitch.confidence:.2f}）")
+    note_name = note_name or cfg.test_note.note
+    if out is None:
+        assert run_dir is not None
+        out = run_dir / "takes" / f"take-{datetime.now():%Y%m%d-%H%M%S}.wav"
+
+    try:
+        settings = CaptureSettings(
+            note=note_to_midi(note_name),
+            velocity=velocity or cfg.test_note.velocity,
+            hold_s=hold or cfg.test_note.hold_s,
+            release_tail_s=cfg.test_note.release_tail_s if tail is None else tail,
+            pre_roll_s=cfg.capture.pre_roll_s,
+            fade_ms=cfg.capture.fade_ms,
+            peak_warn_dbfs=cfg.capture.peak_warn_dbfs,
+            quiet_warn_dbfs=cfg.capture.quiet_warn_dbfs,
+        )
+        recorder = SoundDeviceRecorder(
+            cfg.capture.input_device, cfg.capture.sample_rate, cfg.capture.channels
+        )
+        use_midi = not manual and cfg.midi.output_port is not None
+        if not manual and not use_midi:
+            typer.echo("MIDI 出力ポートが未設定のため、手で弾いて録音します")
+        sender_ctx = (
+            open_sender(cfg.midi.output_port, cfg.midi.channel)  # type: ignore[arg-type]
+            if use_midi
+            else nullcontext(None)
+        )
+        typer.echo(f"録音: {note_name}（ノート {settings.note}、ベロシティ {settings.velocity}）")
+        with sender_ctx as sender:
+            result = capture_note(recorder, sender, settings, prompt=typer.echo)
+        write_capture(out, result)
+    except (CaptureError, MidiError, ValueError) as exc:
+        raise _fail(exc) from exc
+
+    typer.echo(f"保存しました: {out}（ピーク {result.peak_dbfs:.1f} dBFS）")
+    for w in result.warnings:
+        typer.secho(f"注意: {w}", fg=typer.colors.YELLOW)
+    if run_dir is not None and compare_after:
+        typer.echo("")
+        compare(run_dir, out, cfg.synth, plots=True)
 
 
 @app.command("test-signals")

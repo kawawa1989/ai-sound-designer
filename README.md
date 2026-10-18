@@ -11,6 +11,19 @@ uv sync
 cp config/local.example.yaml config/local.yaml
 ```
 
+## 実機の準備（KRONOS 2）
+
+最初に `docs/safety.md`（バックアップ、テスト用 Program、送信する MIDI の範囲）を確認してください。
+
+```bash
+uv run synth-ai devices                          # MIDI 出力ポートと録音デバイスを確認
+uv run synth-ai midi-probe --port KRONOS         # PC から 1 音鳴らせるか確認（Note On/Off のみ）
+uv run synth-ai capture --run runs/001/          # 参照音と同じ音程で録音し、そのまま比較
+```
+
+`config/local.yaml` に MIDI ポートと録音デバイスを書いておくと、以降は省略できます。
+MIDI が使えない場合は合図に合わせて手で弾けば、同じ流れで録音・比較できます（`--manual`）。
+
 ## 使い方（現在）
 
 ```bash

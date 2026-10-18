@@ -2,15 +2,28 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
+from pathlib import Path
 
 from synth_ai.adapters.base import SynthAdapter
 from synth_ai.adapters.fake import FakeSynthAdapter
 from synth_ai.adapters.kronos2 import Kronos2Adapter
 
+# パラメータ表・キャリブレーション表の置き場所。SYNTH_AI_DATA_DIR で変更できる
+DATA_DIR = Path(os.environ.get("SYNTH_AI_DATA_DIR", Path(__file__).resolve().parents[2] / "data"))
+
+
+def _kronos2() -> SynthAdapter:
+    return Kronos2Adapter(
+        parameter_dir=DATA_DIR / "kronos_parameters",
+        calibration_dir=DATA_DIR / "kronos_calibration",
+    )
+
+
 ADAPTER_FACTORIES: dict[str, Callable[[], SynthAdapter]] = {
     "fake": FakeSynthAdapter,
-    "kronos2": Kronos2Adapter,
+    "kronos2": _kronos2,
 }
 
 

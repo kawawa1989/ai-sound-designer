@@ -1,6 +1,23 @@
+from collections.abc import Callable
+from pathlib import Path
+
+import numpy as np
+
 from synth_ai.adapters.base import CapabilityStatus
 from synth_ai.adapters.kronos2 import Kronos2Adapter
-from synth_ai.core.sound_spec.models import SoundSpec
+from synth_ai.adapters.kronos2.roles import Role
+from synth_ai.core.audio.analyze import AnalysisResult
+from synth_ai.core.sound_spec.derive import derive_sound_spec
+from synth_ai.core.sound_spec.models import SoundSpec, StepAction, StepStatus
+from synth_ai.core.synthesis import test_signals as ts
+from synth_ai.core.workflow.recipe import generate_recipe
+from tests.adapters.kronos2.conftest import full_table
+
+Analyze = Callable[[str, np.ndarray], AnalysisResult]
+
+
+def spec_for(analyze_signal: Analyze, name: str, samples: np.ndarray) -> SoundSpec:
+    return derive_sound_spec(analyze_signal(name, samples).analysis)
 
 
 def test_nothing_is_claimed_as_supported_before_verification() -> None:
@@ -10,8 +27,82 @@ def test_nothing_is_claimed_as_supported_before_verification() -> None:
     assert caps.available_engines == ("AL-1", "MOD-7", "HD-1")
 
 
-def test_skeleton_recipe_does_not_invent_parameters(lead_spec: SoundSpec) -> None:
-    recipe = Kronos2Adapter().create_recipe(lead_spec)
+def test_without_table_no_parameters_are_invented(analyze_signal: Analyze) -> None:
+    spec = spec_for(analyze_signal, "ad_sweep", ts.saw_filter_sweep())
+    recipe = generate_recipe(spec, Kronos2Adapter())
+    assert recipe.engine == "AL-1"
     assert recipe.steps == ()
-    assert recipe.uncertainties
+    text = "\n".join(recipe.uncertainties)
+    assert "パラメータ表" in text and "フィルターのカットオフ" in text
     assert "未確定事項" in Kronos2Adapter().manual_instructions(recipe)
+
+
+def test_recipe_from_table(analyze_signal: Analyze, parameter_dir: Path) -> None:
+    spec = spec_for(analyze_signal, "ad_sweep", ts.saw_filter_sweep())
+    adapter = Kronos2Adapter(parameter_dir=parameter_dir)
+    recipe = generate_recipe(spec, adapter)
+    by_id = {s.parameter_id: s for s in recipe.steps}
+    table_ids = {p["id"] for p in full_table()["parameters"]}
+    assert set(by_id) <= table_ids
+    assert by_id["test.wave"].value == "W-Saw"
+    assert by_id["test.wave"].action is StepAction.SELECT
+    assert by_id["test.filter_type"].status is StepStatus.NEEDS_CONFIRMATION
+    assert by_id["test.wave"].status is StepStatus.VERIFIED
+    # 明るさが下がる音なので、フィルター EG を使う
+    assert f"test.{Role.FILTER_EG_INTENSITY.value}" in by_id
+    assert by_id[f"test.{Role.FILTER_EG_ATTACK.value}"].value == 0
+    # キャリブレーションがないので値は空、目標は示す
+    cutoff = by_id[f"test.{Role.FILTER_CUTOFF.value}"]
+    assert cutoff.value is None and cutoff.target is not None
+    assert cutoff.target.feature == "brightness_end"
+    assert f"test.{Role.FILTER_RESONANCE.value}" not in by_id
+    assert [s.order for s in recipe.steps] == list(range(1, len(recipe.steps) + 1))
+    assert any("キャリブレーション未測定" in u for u in recipe.uncertainties)
+
+
+def test_waveform_follows_spectrum(analyze_signal: Analyze, parameter_dir: Path) -> None:
+    spec = spec_for(analyze_signal, "ad_square", ts.square())
+    recipe = Kronos2Adapter(parameter_dir=parameter_dir).create_recipe(spec)
+    assert recipe.steps[0].value == "W-Square"
+    # 明るさが変わらない音には、フィルター EG の手順を出さない
+    assert all("filter_eg" not in s.parameter_id for s in recipe.steps)
+
+
+def test_calibration_gives_values(
+    analyze_signal: Analyze, parameter_dir: Path, calibration_dir: Path
+) -> None:
+    spec = spec_for(analyze_signal, "ad_attack", ts.saw(adsr=ts.Adsr(attack_s=0.125)))
+    adapter = Kronos2Adapter(parameter_dir=parameter_dir, calibration_dir=calibration_dir)
+    recipe = generate_recipe(spec, adapter)
+    attack = next(s for s in recipe.steps if s.parameter_id == f"test.{Role.AMP_EG_ATTACK.value}")
+    # 目標 ≈ 100 ms（線形 125 ms の 80%）→ 曲線上で 50
+    assert isinstance(attack.value, int) and 45 <= attack.value <= 55
+    assert "キャリブレーション表" in attack.reason
+
+
+def test_missing_roles_are_reported(analyze_signal: Analyze, tmp_path: Path) -> None:
+    import json
+
+    (tmp_path / "al1.json").write_text(json.dumps(full_table(skip=(Role.FILTER_CUTOFF,))))
+    spec = spec_for(analyze_signal, "ad_sweep", ts.saw_filter_sweep())
+    recipe = Kronos2Adapter(parameter_dir=tmp_path).create_recipe(spec)
+    assert all(s.parameter_id != f"test.{Role.FILTER_CUTOFF.value}" for s in recipe.steps)
+    assert any("フィルターのカットオフ" in u for u in recipe.uncertainties)
+
+
+def test_bell_notes_that_mod7_fits_better(analyze_signal: Analyze) -> None:
+    spec = spec_for(analyze_signal, "ad_bell", ts.fm_bell())
+    recipe = Kronos2Adapter().create_recipe(spec)
+    assert recipe.engine == "AL-1"
+    assert recipe.alternatives[0].engine == "MOD-7"
+    assert any("MOD-7" in u for u in recipe.uncertainties)
+
+
+def test_manual_instructions(analyze_signal: Analyze, parameter_dir: Path) -> None:
+    spec = spec_for(analyze_signal, "ad_sweep", ts.saw_filter_sweep())
+    adapter = Kronos2Adapter(parameter_dir=parameter_dir)
+    text = adapter.manual_instructions(adapter.create_recipe(spec))
+    assert "## 準備" in text and "## 手順" in text
+    assert "**TestPage › Osc** › Test Wave → **W-Saw**" in text
+    assert "資料で要確認" in text  # verified=false のパラメータ
+    assert "目標" in text

@@ -424,8 +424,10 @@ def harmonic_features(
     raw = _find_partials(freqs, power, f0, nyquist)
     if not raw:
         return None
-
+    # 最大の倍音から 80 dB 以上小さいピークは、実質的に存在しないものとして除く
     max_power = max(p for _, _, p in raw)
+    raw = [(k, freq, p) for k, freq, p in raw if p >= max_power * 1e-8]
+
     partials = tuple(
         Partial(
             number=k,

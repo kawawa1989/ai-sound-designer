@@ -38,3 +38,12 @@ def validate_recipe(recipe: PatchRecipe, spec: SoundSpec, adapter: SynthAdapter)
         )
     if recipe.engine is not None and recipe.engine not in capabilities.available_engines:
         raise RecipeContractError(f"engine {recipe.engine!r} is not in available_engines")
+    vague = [
+        step.order
+        for step in recipe.steps
+        if step.action in (StepAction.SET, StepAction.SELECT)
+        and step.value is None
+        and step.target is None
+    ]
+    if vague:
+        raise RecipeContractError(f"steps {vague} have neither a value nor an acoustic target")

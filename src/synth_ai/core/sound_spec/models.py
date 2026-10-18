@@ -260,11 +260,14 @@ class RecipeStep(FrozenModel):
     reason: str
     source_ref: str | None = None  # 公式資料の該当箇所（例: "Parameter Guide p.123"）
     status: StepStatus = StepStatus.NEEDS_CONFIRMATION
+    # 値が決められない場合に、耳と測定で合わせる音響上の目標（例: アタック 7 ms）
+    target: QuantTarget | None = None
 
 
 class AlternativeApproach(FrozenModel):
     engine: str
     summary: str
+    score: float | None = Field(default=None, ge=0, le=1)
 
 
 class PatchRecipe(FrozenModel):

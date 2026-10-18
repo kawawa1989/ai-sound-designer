@@ -52,3 +52,10 @@ def test_sample_import_on_unsupported_synth_is_rejected(lead_spec: SoundSpec) ->
     steps = sampler.create_recipe(lead_spec).steps
     with pytest.raises(RecipeContractError):
         generate_recipe(lead_spec, _BrokenAdapter({"steps": steps}))
+
+
+def test_vague_steps_are_rejected(lead_spec: SoundSpec) -> None:
+    base = FakeSynthAdapter().create_recipe(lead_spec)
+    vague = base.steps[0].model_copy(update={"value": None, "target": None})
+    with pytest.raises(RecipeContractError, match="neither"):
+        generate_recipe(lead_spec, _BrokenAdapter({"steps": (vague,)}))

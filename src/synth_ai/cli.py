@@ -59,6 +59,50 @@ def analyze(
         typer.echo(f"  {path}")
 
 
+@app.command()
+def spec(
+    run_dir: Annotated[Path, typer.Argument(help="analyze の出力ディレクトリ")],
+) -> None:
+    """analysis.json から機種非依存の sound_spec.json を作る。"""
+    from synth_ai.core.workflow.files import MissingRunFileError, write_sound_spec
+
+    try:
+        sound_spec, path = write_sound_spec(run_dir)
+    except MissingRunFileError as exc:
+        typer.secho(f"エラー: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    t, e = sound_spec.timbre, sound_spec.envelope
+    typer.echo(f"SoundSpec: {sound_spec.spec_id}")
+    typer.echo(
+        f"  音色: 倍音 {t.harmonicity} / 明るさ {t.brightness} / "
+        f"明るさの減衰 {t.brightness_decay} / ノイズ {t.noisiness}"
+    )
+    typer.echo(f"  包絡: A {e.attack} / D {e.decay} / S {e.sustain} / R {e.release}")
+    for h in sound_spec.hypotheses:
+        typer.echo(f"  仮説: {h.method.value} ({h.confidence:.2f}) {h.rationale}")
+    for u in sound_spec.uncertainties:
+        typer.echo(f"  注意: {u}")
+    typer.echo(f"\n出力: {path}")
+
+
+@app.command()
+def recipe(
+    run_dir: Annotated[Path, typer.Argument(help="analyze の出力ディレクトリ")],
+    synth: Annotated[str, typer.Option("--synth", "-s", help="対象機種")] = "kronos2",
+) -> None:
+    """SoundSpec から機種別のレシピ（recipe.json / recipe.md）を作る。"""
+    from synth_ai.core.workflow.files import MissingRunFileError, write_recipe
+    from synth_ai.core.workflow.recipe import RecipeContractError
+
+    try:
+        files = write_recipe(run_dir, get_adapter(synth))
+    except (MissingRunFileError, ValueError, RecipeContractError) as exc:
+        typer.secho(f"エラー: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(files.markdown_path.read_text(encoding="utf-8"))
+    typer.echo(f"出力:\n  {files.json_path}\n  {files.markdown_path}")
+
+
 @app.command("test-signals")
 def test_signals(
     out: Annotated[Path, typer.Argument(help="出力先ディレクトリ")] = Path("assets/test"),

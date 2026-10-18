@@ -12,6 +12,13 @@
 
 Python は 3.12 固定（uv 管理）。システムの python3 は使わない。
 
+## 公式資料
+
+- KRONOS のマニュアルは `manuals/kronos/INDEX.md` で章を絞り、`manuals/kronos/text/` を grep して読む。
+- パラメータ名・値を書くときは出典を「Parameter Guide 本文p.200」のように本文ページで残す。
+- 図・表が必要なときは INDEX の PDF ページを元PDFから Read する。
+- PDF と `text/` は git 管理外。`text/` が無ければ `uv run python scripts/convert_manuals.py manuals/kronos` で再生成する（要 poppler）。
+
 ## 依存ルール（tests/architecture で強制）
 
 - `synth_ai.core` は `synth_ai.core` と `synth_ai.adapters.base` 以外を import しない。

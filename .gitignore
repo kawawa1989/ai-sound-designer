@@ -26,3 +26,8 @@ assets/reference/*
 
 # 公式資料PDF（再配布しない）
 docs/references/
+
+# 公式マニュアル原本と変換テキスト（再配布しない）。INDEX.md だけ管理する
+manuals/**/*.pdf
+manuals/**/*.txt
+manuals/**/text/

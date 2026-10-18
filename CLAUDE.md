@@ -1,0 +1,33 @@
+# AI Sound Designer
+
+参照WAVを解析 → 機種非依存の `SoundSpec` → 機種別Adapterで `PatchRecipe` → 実機録音と比較して改善する。
+計画: `plan/roadmap/roadmap.md`（v1.2）、`plan/implementation-plan.md`（スプリント計画）。
+
+## コマンド
+
+- テスト: `uv run pytest`
+- Lint/整形: `uv run ruff check . && uv run ruff format .`
+- 型: `uv run mypy`
+- CLI: `uv run synth-ai --help`
+
+Python は 3.12 固定（uv 管理）。システムの python3 は使わない。
+
+## 依存ルール（tests/architecture で強制）
+
+- `synth_ai.core` は `synth_ai.core` と `synth_ai.adapters.base` 以外を import しない。
+- core に機種名・エンジン名（KRONOS, PC3A8, AL-1 など）を書かない。`if synth == ...` 分岐を置かない。
+- 各 Adapter は他の Adapter を import しない。
+- Adapter の選択・注入はアプリケーション層（`registry.py`, `cli.py`）で行う。
+- 新しい Adapter は `tests/adapter_contract/test_contract.py` の `ADAPTERS` に追加する。
+
+## データ形式
+
+- `AudioAnalysis`（観測値）/ `SoundSpec`（機種非依存）/ `PatchRecipe`（機種固有）を混在させない。
+- すべて frozen・`schema_version` 付き。Adapter は SoundSpec を変更しない。
+- Capabilities は `supported / unsupported / unverified`。unverified は使用不可として扱う。
+
+## 禁止事項（実機の安全）
+
+- KRONOS の OS 更新（System 3.1.3 固定）。
+- SysEx 書き込み、Global 設定の変更、既存 Program の上書き。テスト用 Bank/Program 以外を触らない。
+- 公式資料で確認していない KRONOS / PC3A8 のパラメータ名・ページ名・値を生成しない。不明なら「要確認」とする。

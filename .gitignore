@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# OS
+.DS_Store
+
+# ローカル設定（デバイス名・ポート名）
+config/local.yaml
+
+# 音声・実験データ（大きい・個人的なもの）
+runs/*
+!runs/.gitkeep
+assets/reference/*
+!assets/reference/.gitkeep
+*.wav
+*.aif
+*.aiff
+
+# 公式資料PDF（再配布しない）
+docs/references/

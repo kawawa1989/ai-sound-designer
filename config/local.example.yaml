@@ -1,0 +1,19 @@
+# config/local.yaml にコピーして使う（git管理外）
+synth: kronos2
+
+midi:
+  output_port: null   # 例: "KRONOS KEYBOARD"（scripts/midi_probe.py で一覧表示）
+  channel: 1
+
+capture:
+  input_device: null  # 例: "KRONOS"（scripts/record_test.py で一覧表示）
+  sample_rate: 48000
+  channels: 2
+  bit_depth: 24
+  peak_warn_dbfs: -1.0
+
+test_note:
+  note: C4
+  velocity: 100
+  hold_s: 1.5
+  release_tail_s: 2.0

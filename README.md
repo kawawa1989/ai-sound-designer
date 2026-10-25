@@ -1,5 +1,7 @@
 # AI Sound Designer
 
+[![CI](https://github.com/kawawa1989/ai-sound-designer/actions/workflows/ci.yml/badge.svg)](https://github.com/kawawa1989/ai-sound-designer/actions/workflows/ci.yml)
+
 「こんな音を作りたい」を、使用するシンセで実現するための手順と改善サイクルに変えるツール。
 初期対象は KORG KRONOS 2（System 3.1.3）。将来 Kurzweil PC3A8 に対応予定。
 
@@ -66,7 +68,12 @@ KRONOS の具体的なパラメータ手順には、公式資料から作るパ�
 ```bash
 uv run pytest
 uv run ruff check .
+uv run ruff format --check .
 uv run mypy
 ```
+
+`main` への push とプルリクエストでは、GitHub Actions（`.github/workflows/ci.yml`）が同じ
+4 つのチェックを実行します。テストは実機・MIDI・オーディオデバイス・公式マニュアル（git 管理外）を
+使わずに完走するようにしてください（実機を扱う処理は偽の MIDI ポートや録音器でテストする）。
 
 構成と方針は `CLAUDE.md`、計画は `plan/` を参照。

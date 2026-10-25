@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from synth_ai.adapters.base import Capabilities, CapabilityStatus
+from synth_ai.adapters.base import Capabilities, CapabilityStatus, ParameterInfo
 from synth_ai.adapters.kronos2.adjust import suggest_adjustments
 from synth_ai.adapters.kronos2.al1 import al1_intents
 from synth_ai.adapters.kronos2.engine_select import (
@@ -21,8 +21,15 @@ from synth_ai.adapters.kronos2.engine_select import (
     rank_engines,
 )
 from synth_ai.adapters.kronos2.intents import Intent
-from synth_ai.adapters.kronos2.parameters import load_table, table_path
+from synth_ai.adapters.kronos2.parameters import (
+    ParameterDef,
+    ParameterKind,
+    ParameterTable,
+    load_table,
+    table_path,
+)
 from synth_ai.adapters.kronos2.recipe import describe_intent, describe_target, render_steps
+from synth_ai.adapters.kronos2.roles import CALIBRATION_FEATURES
 from synth_ai.core.calibration.models import CalibrationSet
 from synth_ai.core.comparison.models import AdjustmentSuggestion, Difference
 from synth_ai.core.sound_spec.models import (
@@ -135,6 +142,37 @@ class Kronos2Adapter:
             load_table(self._parameter_dir, engine),
             CalibrationSet.load(self._calibration_dir, self.synth_id),
         )
+
+    def _tables(self) -> list[ParameterTable]:
+        tables = (load_table(self._parameter_dir, engine) for engine in ENGINES)
+        return [t for t in tables if t is not None]
+
+    @staticmethod
+    def _info(param: ParameterDef) -> ParameterInfo:
+        tab = f" › {param.tab}" if param.tab else ""
+        feature = next(
+            (CALIBRATION_FEATURES[r] for r in param.roles if r in CALIBRATION_FEATURES), None
+        )
+        return ParameterInfo(
+            parameter_id=param.id,
+            label=f"{param.page}{tab} › {param.name}",
+            min=param.min,
+            max=param.max,
+            is_numeric=param.kind is not ParameterKind.CHOICE,
+            calibration_feature=feature,
+            source_ref=param.source_ref,
+        )
+
+    def parameter_info(self, parameter_id: str) -> ParameterInfo | None:
+        for table in self._tables():
+            param = table.by_id(parameter_id)
+            if param is not None:
+                return self._info(param)
+        return None
+
+    def calibratable_parameters(self) -> tuple[ParameterInfo, ...]:
+        infos = (self._info(p) for t in self._tables() for p in t.parameters)
+        return tuple(i for i in infos if i.is_numeric and i.calibration_feature)
 
     def manual_instructions(self, recipe: PatchRecipe) -> str:
         lines = [

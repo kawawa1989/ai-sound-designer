@@ -353,6 +353,230 @@ def capture(
         compare(run_dir, out, cfg.synth, plots=True)
 
 
+def _default_values(lo: float, hi: float, count: int = 8) -> tuple[float, ...]:
+    """範囲を count 段に分けた整数値。両極性の範囲は 0 から上限まで。"""
+    start = 0.0 if lo < 0 < hi else lo
+    step = (hi - start) / (count - 1)
+    return tuple(sorted({float(round(start + i * step)) for i in range(count)}))
+
+
+@app.command()
+def calibrate(
+    parameter_id: Annotated[
+        str | None, typer.Argument(help="パラメータ ID（省略すると測れるパラメータの一覧）")
+    ] = None,
+    values: Annotated[
+        str | None, typer.Option(help="測る値（カンマ区切り。既定: 範囲を 8 段に分ける）")
+    ] = None,
+    feature: Annotated[
+        str | None, typer.Option(help="測る特徴（既定: パラメータ表の役割から決まるもの）")
+    ] = None,
+    note: Annotated[str | None, typer.Option(help="音名（既定: 設定の test_note.note）")] = None,
+    velocity: Annotated[int | None, typer.Option(min=1, max=127)] = None,
+    hold: Annotated[float | None, typer.Option(help="押さえる秒数")] = None,
+    tail: Annotated[float | None, typer.Option(help="離した後に録音を続ける秒数")] = None,
+    conditions: Annotated[str, typer.Option(help="測定条件のメモ（基準の音色など）")] = "",
+    manual: Annotated[bool, typer.Option(help="MIDI を使わず手で弾く")] = False,
+    overwrite: Annotated[bool, typer.Option(help="既存の曲線を確認なしで上書きする")] = False,
+    config: ConfigOption = None,
+) -> None:
+    """実機でパラメータを数段階変えて録音し、キャリブレーション曲線を作る（対話式）。"""
+    from contextlib import nullcontext
+    from datetime import datetime
+
+    from synth_ai.adapters.base import ParameterCatalog
+    from synth_ai.core.audio.analyze import analyze_file
+    from synth_ai.core.audio.load import AudioLoadError
+    from synth_ai.core.audio.notes import note_to_midi
+    from synth_ai.core.calibration.session import (
+        MIN_HOLD_S,
+        MIN_TAIL_S,
+        CalibrationPlan,
+        Measurement,
+        NotEnoughPointsError,
+        Step,
+        Verdict,
+        build_curve,
+        curve_filename,
+        run_session,
+    )
+    from synth_ai.core.sound_spec.features import LABELS, UNITS, Feature
+    from synth_ai.core.sound_spec.io import save_json
+    from synth_ai.infrastructure.capture.recorder import (
+        CaptureError,
+        CaptureSettings,
+        SoundDeviceRecorder,
+        capture_note,
+        write_capture,
+    )
+    from synth_ai.infrastructure.midi.sender import MidiError, open_sender
+    from synth_ai.registry import CALIBRATION_DIRS
+
+    cfg = _config(config)
+    adapter = get_adapter(cfg.synth)
+    if not isinstance(adapter, ParameterCatalog):
+        raise _fail(ValueError(f"{cfg.synth} はパラメータ表を持っていません"))
+
+    if parameter_id is None:
+        typer.echo("測れるパラメータ（ID / 測る特徴 / 範囲）:")
+        for p in adapter.calibratable_parameters():
+            typer.echo(
+                f"  {p.parameter_id}  {p.calibration_feature}  {p.min:g}〜{p.max:g}  {p.label}"
+            )
+        return
+
+    info = adapter.parameter_info(parameter_id)
+    if info is None or not info.is_numeric or info.min is None or info.max is None:
+        raise _fail(ValueError(f"数値のパラメータ「{parameter_id}」がパラメータ表にありません"))
+    try:
+        target = Feature(feature or info.calibration_feature or "")
+    except ValueError as exc:
+        raise _fail(ValueError(f"測る特徴を --feature で指定してください（{feature}）")) from exc
+    try:
+        points = (
+            tuple(float(v) for v in values.split(","))
+            if values
+            else _default_values(info.min, info.max)
+        )
+    except ValueError as exc:
+        raise _fail(
+            ValueError(f"--values はカンマ区切りの数値で指定してください: {values}")
+        ) from exc
+    out_of_range = [v for v in points if not info.min <= v <= info.max]
+    if out_of_range:
+        raise _fail(
+            ValueError(f"範囲 {info.min:g}〜{info.max:g} の外の値があります: {out_of_range}")
+        )
+
+    note_name = note or cfg.test_note.note
+    hold_s = max(hold or cfg.test_note.hold_s, MIN_HOLD_S.get(target, 0.0))
+    tail_s = max(
+        cfg.test_note.release_tail_s if tail is None else tail, MIN_TAIL_S.get(target, 0.0)
+    )
+    try:
+        settings = CaptureSettings(
+            note=note_to_midi(note_name),
+            velocity=velocity or cfg.test_note.velocity,
+            hold_s=hold_s,
+            release_tail_s=tail_s,
+            pre_roll_s=cfg.capture.pre_roll_s,
+            fade_ms=cfg.capture.fade_ms,
+            peak_warn_dbfs=cfg.capture.peak_warn_dbfs,
+            quiet_warn_dbfs=cfg.capture.quiet_warn_dbfs,
+        )
+    except ValueError as exc:
+        raise _fail(exc) from exc
+    auto_conditions = (
+        f"{note_name} / velocity {settings.velocity} / hold {hold_s:g}s / tail {tail_s:g}s"
+    )
+    plan = CalibrationPlan(
+        synth_id=adapter.synth_id,
+        parameter_id=info.parameter_id,
+        parameter_label=info.label,
+        feature=target,
+        values=points,
+        conditions=f"{conditions} / {auto_conditions}" if conditions else auto_conditions,
+    )
+    unit = UNITS[target]
+    session_dir = (
+        Path("runs")
+        / "calibration"
+        / f"{info.parameter_id}__{target.value}-{datetime.now():%Y%m%d-%H%M%S}"
+    )
+    typer.echo(f"パラメータ: {info.label}（{info.source_ref or '出典なし'}）")
+    typer.echo(f"測る特徴: {LABELS[target]}（{unit}） / 値: {', '.join(f'{v:g}' for v in points)}")
+    typer.echo(f"条件: {plan.conditions}")
+    typer.echo("基準の音色を選び、このパラメータだけを変えてください。\n")
+
+    use_midi = not manual and cfg.midi.output_port is not None
+    try:
+        recorder = SoundDeviceRecorder(
+            cfg.capture.input_device, cfg.capture.sample_rate, cfg.capture.channels
+        )
+        sender_ctx = (
+            open_sender(cfg.midi.output_port, cfg.midi.channel)  # type: ignore[arg-type]
+            if use_midi
+            else nullcontext(None)
+        )
+        with sender_ctx as sender:
+
+            def ask_to_set(index: int, value: float) -> Step:
+                answer = (
+                    typer.prompt(
+                        f"[{index + 1}/{len(points)}] {info.label} を {value:g} にして Enter"
+                        "（s: スキップ / q: ここで終了）",
+                        default="",
+                        show_default=False,
+                    )
+                    .strip()
+                    .lower()
+                )
+                return {"s": Step.SKIP, "q": Step.QUIT}.get(answer, Step.GO)
+
+            def record(value: float, attempt: int) -> Path:
+                result = capture_note(recorder, sender, settings, prompt=typer.echo)
+                for w in result.warnings:
+                    typer.secho(f"  注意: {w}", fg=typer.colors.YELLOW)
+                return write_capture(session_dir / f"v{value:g}_try{attempt}.wav", result)
+
+            def confirm(m: Measurement) -> Verdict:
+                shown = (
+                    "測れませんでした" if m.feature_value is None else f"{m.feature_value:g} {unit}"
+                )
+                typer.echo(f"  → {LABELS[target]}: {shown}")
+                for issue in m.issues:
+                    typer.secho(f"  注意: {issue.message}", fg=typer.colors.YELLOW)
+                answer = (
+                    typer.prompt(
+                        "  Enter: 採用 / r: 録り直し / s: この値は使わない",
+                        default="",
+                        show_default=False,
+                    )
+                    .strip()
+                    .lower()
+                )
+                return {"r": Verdict.RETRY, "s": Verdict.SKIP}.get(answer, Verdict.ACCEPT)
+
+            session = run_session(
+                plan, ask_to_set, record, lambda p: analyze_file(p).analysis, confirm
+            )
+    except (CaptureError, MidiError, AudioLoadError) as exc:
+        raise _fail(exc) from exc
+
+    typer.echo("\n値 → 特徴:")
+    for m in session.points:
+        typer.echo(f"  {m.parameter_value:>6g} → {m.feature_value:g} {unit}")
+    if session.skipped:
+        typer.echo(f"  使わなかった値: {', '.join(f'{v:g}' for v in session.skipped)}")
+    try:
+        curve = build_curve(session)
+    except NotEnoughPointsError as exc:
+        raise _fail(exc) from exc
+    if not curve.is_monotonic:
+        typer.secho(
+            "注意: 値を上げても特徴が一方向に変わっていません。"
+            "この曲線はレシピの逆引きに使われません。"
+            "測定条件や測る特徴を見直してください",
+            fg=typer.colors.YELLOW,
+        )
+
+    out_dir = CALIBRATION_DIRS.get(
+        adapter.synth_id, Path("data") / f"{adapter.synth_id}_calibration"
+    )
+    path = out_dir / curve_filename(info.parameter_id, target)
+    if path.exists() and not overwrite and not typer.confirm(f"{path} を上書きしますか？"):
+        alt = session_dir / path.name
+        save_json(curve, alt)
+        typer.echo(f"上書きせず、{alt} に保存しました")
+    else:
+        save_json(curve, path)
+        typer.echo(f"保存しました: {path}")
+    typer.echo(f"録音: {session_dir}")
+    typer.echo(
+        "基準の音色に戻すため、変えたパラメータを保存せずに U-CC000 などを選び直してください"
+    )
+
+
 @app.command("test-signals")
 def test_signals(
     out: Annotated[Path, typer.Argument(help="出力先ディレクトリ")] = Path("assets/test"),

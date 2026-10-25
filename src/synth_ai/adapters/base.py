@@ -62,3 +62,26 @@ class AdjustmentAdvisor(Protocol):
         differences: tuple[Difference, ...],
         recipe: PatchRecipe | None,
     ) -> tuple[AdjustmentSuggestion, ...]: ...
+
+
+class ParameterInfo(BaseModel):
+    """キャリブレーションなどで使う、機種のパラメータ 1 つの説明。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    parameter_id: str
+    label: str  # 本体で探すための表示（ページ › タブ › 名前）
+    min: float | None = None
+    max: float | None = None
+    is_numeric: bool
+    calibration_feature: str | None = None  # 測るとよい音響特徴（Feature の値）
+    source_ref: str | None = None
+
+
+@runtime_checkable
+class ParameterCatalog(Protocol):
+    """任意の契約。機種のパラメータ表を引ける Adapter が実装する。"""
+
+    def parameter_info(self, parameter_id: str) -> ParameterInfo | None: ...
+
+    def calibratable_parameters(self) -> tuple[ParameterInfo, ...]: ...

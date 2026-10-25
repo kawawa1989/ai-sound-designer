@@ -21,6 +21,9 @@ def _kronos2() -> SynthAdapter:
     )
 
 
+# 機種ごとのキャリブレーション表の置き場所
+CALIBRATION_DIRS: dict[str, Path] = {"kronos2": DATA_DIR / "kronos_calibration"}
+
 ADAPTER_FACTORIES: dict[str, Callable[[], SynthAdapter]] = {
     "fake": FakeSynthAdapter,
     "kronos2": _kronos2,

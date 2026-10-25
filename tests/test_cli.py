@@ -138,3 +138,51 @@ def test_devices_lists_ports(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
     result = CliRunner().invoke(app, ["devices", "--config", str(config)])
     assert result.exit_code == 0
     assert "* KRONOS KEYBOARD" in result.output and "* KRONOS（2 ch" in result.output
+
+
+def test_calibrate_interactive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from synth_ai import registry
+    from synth_ai.core.calibration.models import CalibrationCurve
+    from synth_ai.core.synthesis.test_signals import Adsr
+    from synth_ai.infrastructure.capture import recorder as rec_module
+    from tests.infrastructure.fakes import FakePort, FakeRecorder
+
+    attacks = iter([0.005, 0.1, 0.1, 0.4])  # 2 つめは録り直し
+    port = FakePort()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("mido.get_output_names", lambda: ["KRONOS KEYBOARD"])
+    monkeypatch.setattr("mido.open_output", lambda name: port)
+    monkeypatch.setattr(
+        rec_module,
+        "SoundDeviceRecorder",
+        lambda *a: FakeRecorder(lambda: saw(adsr=Adsr(attack_s=next(attacks), note_s=1.5))),
+    )
+    monkeypatch.setitem(registry.CALIBRATION_DIRS, "kronos2", tmp_path / "cal")
+    monkeypatch.setattr("time.sleep", lambda _: None)  # 押さえる時間（最低 3 秒）を待たない
+    config = tmp_path / "local.yaml"
+    config.write_text(
+        "midi:\n  output_port: KRONOS\n"
+        "test_note:\n  hold_s: 0.01\n  release_tail_s: 0\n"
+        "capture:\n  pre_roll_s: 0\n"
+    )
+    # 値ごとに「Enter（設定した）」→「Enter（採用）」。2 つめは r で録り直す
+    answers = "\n\n" + "\nr\n\n" + "\n\n"
+    result = CliRunner().invoke(
+        app,
+        ["calibrate", "al1.amp_eg.time.attack", "--values", "0,30,60", "--config", str(config)],
+        input=answers,
+    )
+    assert result.exit_code == 0, result.output
+    assert "Amp EG Time Attack" in result.output
+    path = tmp_path / "cal" / "al1.amp_eg.time.attack__attack_time.json"
+    curve = CalibrationCurve.model_validate_json(path.read_text())
+    assert [p.parameter_value for p in curve.points] == [0, 30, 60]
+    assert curve.is_monotonic
+    assert "hold 3s" in curve.conditions  # アタックの測定では最低 3 秒押さえる
+    assert len(list((tmp_path / "runs" / "calibration").rglob("*.wav"))) == 4
+
+
+def test_calibrate_lists_parameters() -> None:
+    result = CliRunner().invoke(app, ["calibrate", "--config", "/nonexistent.yaml"])
+    assert result.exit_code == 0
+    assert "al1.filter_a.frequency" in result.output

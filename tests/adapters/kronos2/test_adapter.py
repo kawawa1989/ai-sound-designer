@@ -157,3 +157,20 @@ def test_manual_instructions(analyze_signal: Analyze, parameter_dir: Path) -> No
     assert "**TestPage › Osc** › Test Wave → **W-Saw**" in text
     assert "資料で要確認" in text  # verified=false のパラメータ
     assert "目標" in text
+
+
+def test_parameter_catalog(parameter_dir: Path) -> None:
+    from synth_ai.adapters.base import ParameterCatalog
+
+    adapter = Kronos2Adapter(parameter_dir=parameter_dir)
+    assert isinstance(adapter, ParameterCatalog)
+    info = adapter.parameter_info(f"test.{Role.AMP_EG_ATTACK.value}")
+    assert info is not None and info.calibration_feature == "attack_time"
+    assert info.label == f"TestPage › Test {Role.AMP_EG_ATTACK.value}"
+    wave = adapter.parameter_info("test.wave")
+    assert wave is not None and not wave.is_numeric
+    assert adapter.parameter_info("missing") is None
+    ids = {p.parameter_id for p in adapter.calibratable_parameters()}
+    assert f"test.{Role.FILTER_CUTOFF.value}" in ids
+    assert "test.wave" not in ids and f"test.{Role.FILTER_RESONANCE.value}" not in ids
+    assert Kronos2Adapter().calibratable_parameters() == ()

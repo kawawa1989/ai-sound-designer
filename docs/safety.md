@@ -18,9 +18,16 @@
 
 作業を始める前に記入する。
 
-- テスト用 Bank: `（例: USER-?）`
-- テスト用 Program 番号: `（例: 000〜007）`
-- 決めた日: `YYYY-MM-DD`
+- テスト用 Bank: `USER-CC`
+- テスト用 Program 番号: `U-CC000`〜（使う番号を増やしたらここに追記する）
+- 決めた日: `2026-10-25`
+
+| 番号 | 名前 | 内容 |
+| --- | --- | --- |
+| U-CC000 | AL-1 BASIC SOUND | キャリブレーションの基準の音。AL-1、OSC1 Saw（Level 99、他の音源は 0）、Filter Single / Low Pass / Resonance 0 / EG Intensity 0 / Keyboard Track Intensity to A 0、Amp EG Level 0/99/75/75・Time 00/00/30/20、IFX・MFX・TFX すべてオフ |
+
+キャリブレーションでは U-CC000 を呼び出してから 1 つのパラメータだけを変え、測り終えたら保存せずに戻す
+（基準の音を上書きしない）。
 
 ## バックアップのチェックリスト
 

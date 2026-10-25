@@ -122,6 +122,21 @@
 | `amp_eg_release` | `release_time` |
 | `noise_level` | `noisiness` |
 
-測定手順: テスト用 Program で対象パラメータだけを数段階変え、それぞれ録音して
-`synth-ai analyze` にかけ、`synth-ai spec` の定量目標から値を読み取る（自動化は Sprint 4 以降）。
-曲線は単調（値を上げると特徴が一方向に変わる）である必要がある。単調でない曲線は逆引きに使われない。
+測定は `synth-ai calibrate` で対話的に行う（基準の音色は `docs/safety.md` の U-CC000）。
+
+```bash
+uv run synth-ai calibrate
+```
+
+```bash
+uv run synth-ai calibrate al1.filter_a.frequency --values 0,15,30,45,60,75,90,99
+```
+
+1 つめは測れるパラメータの一覧を表示する。2 つめで測定を始めると、値ごとに
+「本体でその値にして Enter」→ MIDI で発音・録音 → 解析 → 測った特徴を表示 →「Enter で採用 / r で録り直し / s で使わない」
+を繰り返し、最後に `data/kronos_calibration/<パラメータ ID>__<特徴>.json` を書き出す。録音は `runs/calibration/` に残る。
+
+- 測る特徴はパラメータ表の役割から自動で決まる（`--feature` で変更可）
+- アタック・ディケイなどは押さえる時間を最低 3 秒、リリースは余韻を最低 4 秒にする
+- 曲線は単調（値を上げると特徴が一方向に変わる）である必要がある。単調でない曲線は逆引きに使われない
+- 測り終えたら、変えたパラメータを保存せずに基準の音色を選び直す

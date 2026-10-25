@@ -52,6 +52,18 @@ class ChoiceTag(StrEnum):
     FILTER_EG = "filter_eg"  # EG の選択肢のうち、フィルター用の EG
 
 
+# キャリブレーションで測る音響特徴（synth_ai.core.sound_spec.features.Feature の値）
+CALIBRATION_FEATURES: dict[Role, str] = {
+    Role.FILTER_CUTOFF: "brightness_end",
+    Role.FILTER_EG_INTENSITY: "brightness_change",
+    Role.FILTER_EG_DECAY: "brightness_decay_time",
+    Role.AMP_EG_ATTACK: "attack_time",
+    Role.AMP_EG_DECAY: "decay_time",
+    Role.AMP_EG_SUSTAIN: "sustain_level",
+    Role.AMP_EG_RELEASE: "release_time",
+    Role.NOISE_LEVEL: "noisiness",
+}
+
 ROLE_LABELS: dict[Role, str] = {
     Role.OSCILLATOR_WAVEFORM: "オシレーターの波形",
     Role.NOISE_LEVEL: "ノイズの量",

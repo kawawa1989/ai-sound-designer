@@ -67,11 +67,21 @@
 | `filter_type` | フィルターの種類（選択式。`lowpass` などのタグを付ける） |
 | `filter_cutoff` | カットオフ周波数 |
 | `filter_resonance` | レゾナンス |
+| `filter_eg_source` | カットオフを動かす EG の選択（選択式。フィルター用 EG の選択肢に `filter_eg` タグ） |
 | `filter_eg_intensity` | フィルター EG がカットオフを動かす量 |
-| `filter_eg_attack` / `_decay` / `_sustain` / `_release` | フィルター EG の各段 |
-| `amp_eg_attack` / `_decay` / `_sustain` / `_release` | アンプ EG の各段 |
+| `filter_eg_attack` / `_decay` / `_slope` / `_release` | フィルター EG の各段の時間 |
+| `filter_eg_start_level` / `_attack_level` / `_break_level` / `filter_eg_sustain` | フィルター EG の各レベル |
+| `amp_eg_attack` / `_decay` / `_slope` / `_release` | アンプ EG の各段の時間 |
+| `amp_eg_start_level` / `_attack_level` / `_break_level` / `amp_eg_sustain` | アンプ EG の各レベル |
 
-選択肢のタグ: `saw` `square` `pulse` `triangle` `sine` `noise` `lowpass` `highpass` `bandpass`
+`*_start_level` `*_attack_level` `*_break_level` `*_slope` と `filter_eg_source` は、多段 EG を持つ機種向けの
+任意の役割。表になければ手順から省かれ、未登録としても報告されない。
+両極性のレベル（–99…+99 など）は、レシピで「効果なし」にするとき 0 に設定される。
+
+選択肢のタグ: `saw` `square` `pulse` `triangle` `sine` `noise` `lowpass` `highpass` `bandpass` `filter_eg`
+
+`notes` に書いた内容は、レシピの各手順の理由に「（注: …）」として表示される。
+レシピで自動設定できない補足（例: Pulse を矩形波にするにはパルス幅 50）はここに書く。
 
 役割の一覧は `src/synth_ai/adapters/kronos2/roles.py` が正。足りない役割があれば先にそこへ追加する。
 

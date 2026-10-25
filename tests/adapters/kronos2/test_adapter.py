@@ -64,8 +64,59 @@ def test_waveform_follows_spectrum(analyze_signal: Analyze, parameter_dir: Path)
     spec = spec_for(analyze_signal, "ad_square", ts.square())
     recipe = Kronos2Adapter(parameter_dir=parameter_dir).create_recipe(spec)
     assert recipe.steps[0].value == "W-Square"
-    # 明るさが変わらない音には、フィルター EG の手順を出さない
-    assert all("filter_eg" not in s.parameter_id for s in recipe.steps)
+    # 明るさが変わらない音では、フィルター EG の効きを 0 にするだけ
+    eg_steps = [s for s in recipe.steps if "filter_eg" in s.parameter_id]
+    assert [(s.parameter_id, s.value) for s in eg_steps] == [
+        (f"test.{Role.FILTER_EG_INTENSITY.value}", 0)
+    ]
+
+
+def test_multistage_eg_for_darkening_sound(analyze_signal: Analyze, parameter_dir: Path) -> None:
+    spec = spec_for(analyze_signal, "ad_sweep", ts.saw_filter_sweep())
+    recipe = Kronos2Adapter(parameter_dir=parameter_dir).create_recipe(spec)
+    values = {s.parameter_id: s.value for s in recipe.steps}
+    assert values["test.eg_select"] == "E-1"
+    assert values[f"test.{Role.FILTER_EG_START_LEVEL.value}"] == 99
+    # 両極性のレベルでは「効果なし」は 0（最小の -99 ではない）
+    assert values[f"test.{Role.FILTER_EG_SUSTAIN.value}"] == 0
+    assert values[f"test.{Role.FILTER_EG_BREAK_LEVEL.value}"] == 0
+    assert values[f"test.{Role.AMP_EG_START_LEVEL.value}"] == 0
+    # サステインがある音: ブレイク・レベルもサステインと同じ目標
+    break_step = next(
+        s for s in recipe.steps if s.parameter_id == f"test.{Role.AMP_EG_BREAK_LEVEL.value}"
+    )
+    assert break_step.target is not None and break_step.target.feature == "sustain_level"
+
+
+def test_optional_roles_are_not_reported_missing(analyze_signal: Analyze, tmp_path: Path) -> None:
+    import json
+
+    optional = (
+        Role.FILTER_EG_SOURCE,
+        Role.FILTER_EG_START_LEVEL,
+        Role.FILTER_EG_ATTACK_LEVEL,
+        Role.FILTER_EG_BREAK_LEVEL,
+        Role.AMP_EG_START_LEVEL,
+        Role.AMP_EG_ATTACK_LEVEL,
+        Role.AMP_EG_BREAK_LEVEL,
+    )
+    (tmp_path / "al1.json").write_text(json.dumps(full_table(skip=optional)))
+    spec = spec_for(analyze_signal, "ad_sweep", ts.saw_filter_sweep())
+    recipe = Kronos2Adapter(parameter_dir=tmp_path).create_recipe(spec)
+    assert not any("未登録" in u for u in recipe.uncertainties)
+
+
+def test_parameter_notes_are_shown(analyze_signal: Analyze, tmp_path: Path) -> None:
+    import json
+
+    table = full_table()
+    for p in table["parameters"]:
+        if p["id"] == "test.wave":
+            p["notes"] = "矩形波は幅 50"
+    (tmp_path / "al1.json").write_text(json.dumps(table))
+    spec = spec_for(analyze_signal, "ad_saw", ts.saw())
+    recipe = Kronos2Adapter(parameter_dir=tmp_path).create_recipe(spec)
+    assert "（注: 矩形波は幅 50）" in recipe.steps[0].reason
 
 
 def test_calibration_gives_values(

@@ -66,44 +66,105 @@ def al1_intents(spec: SoundSpec) -> list[Intent]:
         intents.append(Intent(Role.FILTER_CUTOFF, StepAction.SET, reason, target=cutoff_target))
 
     if darkening:
-        change = target_of(spec, Feature.BRIGHTNESS_CHANGE)
-        if change is not None:
-            intents.append(
-                Intent(
-                    Role.FILTER_EG_INTENSITY,
-                    StepAction.SET,
-                    "発音直後が明るく、時間とともに暗くなる"
-                    f"（終盤は発音直後の {change.value:.2f} 倍）",
-                    target=change,
-                )
-            )
+        intents += _filter_eg_intents(spec)
+    else:
         intents.append(
             Intent(
-                Role.FILTER_EG_ATTACK,
+                Role.FILTER_EG_INTENSITY,
                 StepAction.SET,
-                "発音した瞬間がいちばん明るい",
-                extreme="min",
+                "明るさが時間で変わらないため、フィルター EG でカットオフを動かさない",
+                extreme="zero",
             )
         )
-        decay = target_of(spec, Feature.BRIGHTNESS_DECAY_TIME)
-        if decay is not None:
-            intents.append(
-                Intent(
-                    Role.FILTER_EG_DECAY,
-                    StepAction.SET,
-                    "明るさが下がる速さに合わせる",
-                    target=decay,
-                )
-            )
-        intents.append(
-            Intent(
-                Role.FILTER_EG_SUSTAIN,
-                StepAction.SET,
-                "持続部の明るさはカットオフで決めるため、EG は最後まで閉じる",
-                extreme="min",
-            )
-        )
+    intents += _amp_eg_intents(spec)
+    return intents
 
+
+def _filter_eg_intents(spec: SoundSpec) -> list[Intent]:
+    """発音直後に最も明るく、そこから持続部の明るさまで下がる EG。"""
+    intents = [
+        Intent(
+            Role.FILTER_EG_SOURCE,
+            StepAction.SELECT,
+            "カットオフをフィルター用の EG で動かす",
+            choice=ChoiceTag.FILTER_EG,
+            optional=True,
+        )
+    ]
+    change = target_of(spec, Feature.BRIGHTNESS_CHANGE)
+    if change is not None:
+        intents.append(
+            Intent(
+                Role.FILTER_EG_INTENSITY,
+                StepAction.SET,
+                f"発音直後が明るく、時間とともに暗くなる（終盤は発音直後の {change.value:.2f} 倍）",
+                target=change,
+            )
+        )
+    intents += [
+        Intent(
+            Role.FILTER_EG_START_LEVEL,
+            StepAction.SET,
+            "発音した瞬間から最も明るくする",
+            extreme="max",
+            optional=True,
+        ),
+        Intent(
+            Role.FILTER_EG_ATTACK_LEVEL,
+            StepAction.SET,
+            "発音直後の明るさを保つ",
+            extreme="max",
+            optional=True,
+        ),
+        Intent(
+            Role.FILTER_EG_ATTACK,
+            StepAction.SET,
+            "発音した瞬間がいちばん明るい",
+            extreme="min",
+        ),
+    ]
+    decay = target_of(spec, Feature.BRIGHTNESS_DECAY_TIME)
+    if decay is not None:
+        intents.append(
+            Intent(
+                Role.FILTER_EG_DECAY, StepAction.SET, "明るさが下がる速さに合わせる", target=decay
+            )
+        )
+    intents += [
+        Intent(
+            Role.FILTER_EG_BREAK_LEVEL,
+            StepAction.SET,
+            "ディケイの終わりで EG の効果をなくす",
+            extreme="zero",
+            optional=True,
+        ),
+        Intent(
+            Role.FILTER_EG_SUSTAIN,
+            StepAction.SET,
+            "持続部の明るさはカットオフで決めるため、EG の効果をなくす",
+            extreme="zero",
+        ),
+    ]
+    return intents
+
+
+def _amp_eg_intents(spec: SoundSpec) -> list[Intent]:
+    intents = [
+        Intent(
+            Role.AMP_EG_START_LEVEL,
+            StepAction.SET,
+            "無音から立ち上がる",
+            extreme="min",
+            optional=True,
+        ),
+        Intent(
+            Role.AMP_EG_ATTACK_LEVEL,
+            StepAction.SET,
+            "立ち上がりの頂点を最大音量にする",
+            extreme="max",
+            optional=True,
+        ),
+    ]
     attack = target_of(spec, Feature.ATTACK_TIME)
     if attack is not None:
         intents.append(
@@ -120,19 +181,22 @@ def al1_intents(spec: SoundSpec) -> list[Intent]:
             )
         )
     sustain = target_of(spec, Feature.SUSTAIN_LEVEL)
-    if spec.envelope.sustain is Level.VERY_LOW or sustain is None:
-        intents.append(
-            Intent(
-                Role.AMP_EG_SUSTAIN,
-                StepAction.SET,
-                "鍵盤を押し続けても音量が保たれない（減衰していく）",
-                extreme="min",
+    sustained = spec.envelope.sustain is not Level.VERY_LOW and sustain is not None
+    for role, optional in ((Role.AMP_EG_BREAK_LEVEL, True), (Role.AMP_EG_SUSTAIN, False)):
+        if sustained:
+            reason = (
+                "ディケイの終わりでサステインと同じ音量にする（スロープを使わない）"
+                if optional
+                else "持続部の音量に合わせる"
             )
-        )
-    else:
-        intents.append(
-            Intent(Role.AMP_EG_SUSTAIN, StepAction.SET, "持続部の音量に合わせる", target=sustain)
-        )
+            intents.append(Intent(role, StepAction.SET, reason, target=sustain, optional=optional))
+        else:
+            reason = (
+                "ディケイの終わりで無音まで下げる"
+                if optional
+                else "鍵盤を押し続けても音量が保たれない（減衰していく）"
+            )
+            intents.append(Intent(role, StepAction.SET, reason, extreme="min", optional=optional))
     release = target_of(spec, Feature.RELEASE_TIME)
     if release is not None:
         intents.append(

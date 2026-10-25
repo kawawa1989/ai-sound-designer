@@ -54,8 +54,29 @@ def full_table(skip: tuple[Role, ...] = ()) -> dict[str, Any]:
             "verified": False,
         },
     ]
-    numeric_roles = [r for r in Role if r not in (Role.OSCILLATOR_WAVEFORM, Role.FILTER_TYPE)]
-    params += [numeric(r) for r in numeric_roles]
+    params.append(
+        {
+            "id": "test.eg_select",
+            "page": "TestPage",
+            "name": "Test EG Select",
+            "kind": "choice",
+            "choices": [{"value": "E-1", "tags": ["filter_eg"]}, {"value": "E-Amp"}],
+            "roles": [Role.FILTER_EG_SOURCE.value],
+            "source_ref": "test fixture",
+            "verified": True,
+        }
+    )
+    choice_roles = (Role.OSCILLATOR_WAVEFORM, Role.FILTER_TYPE, Role.FILTER_EG_SOURCE)
+    bipolar = (
+        Role.FILTER_EG_INTENSITY,
+        Role.FILTER_EG_START_LEVEL,
+        Role.FILTER_EG_ATTACK_LEVEL,
+        Role.FILTER_EG_BREAK_LEVEL,
+        Role.FILTER_EG_SUSTAIN,
+    )
+    params += [
+        numeric(r, min=-99) if r in bipolar else numeric(r) for r in Role if r not in choice_roles
+    ]
     params = [p for p in params if not set(p["roles"]) & {r.value for r in skip}]
     return {
         "schema_version": "1.0",

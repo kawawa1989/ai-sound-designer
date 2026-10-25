@@ -46,7 +46,9 @@ def describe_intent(intent: Intent) -> str:
     if intent.choice is not None:
         how = f"「{intent.choice.value}」系を選ぶ"
     elif intent.extreme is not None:
-        how = "最小にする" if intent.extreme == "min" else "最大にする"
+        how = {"min": "最小にする", "max": "最大にする", "zero": "0（効果なし）にする"}[
+            intent.extreme
+        ]
     elif intent.target is not None:
         how = f"{describe_target(intent.target)} に合わせる"
     else:
@@ -61,7 +63,8 @@ def render_steps(
     for intent in intents:
         param = table.by_role(intent.role) if table else None
         if param is None:
-            result.unregistered.append(intent)
+            if not intent.optional:
+                result.unregistered.append(intent)
             continue
 
         value: str | float | int | None = None
@@ -79,7 +82,11 @@ def render_steps(
             if param.kind is ParameterKind.CHOICE:
                 result.uncertainties.append(f"{param.name} は選択式のため最小・最大を指定できない")
                 continue
-            value = param.clamp(param.min if intent.extreme == "min" else param.max)  # type: ignore[arg-type]
+            assert param.min is not None and param.max is not None
+            bound = {"min": param.min, "max": param.max}.get(intent.extreme)
+            if bound is None:  # zero
+                bound = 0.0 if param.min <= 0 <= param.max else param.min
+            value = param.clamp(bound)
         elif intent.target is not None and param.kind is not ParameterKind.CHOICE:
             curve = calibrations.get(param.id, intent.target.feature)
             estimate = curve.inverse(intent.target.value) if curve else None
@@ -92,6 +99,8 @@ def render_steps(
             else:
                 result.uncalibrated += 1
 
+        if param.notes:
+            reason += f"（注: {param.notes}）"
         result.steps.append(
             RecipeStep(
                 order=len(result.steps) + 1,

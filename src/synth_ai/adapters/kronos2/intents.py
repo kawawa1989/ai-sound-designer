@@ -18,6 +18,10 @@ class Intent:
     role: Role
     action: StepAction
     reason: str
-    choice: ChoiceTag | None = None  # 選択式: この タグの選択肢を選ぶ
-    extreme: Literal["min", "max"] | None = None  # 数値: 最小・最大にする
+    choice: ChoiceTag | None = None  # 選択式: このタグの選択肢を選ぶ
+    # 数値: 最小・最大にする。zero は「効果なし」の 0（範囲に 0 がなければ最小）
+    extreme: Literal["min", "max", "zero"] | None = None
     target: QuantTarget | None = None  # 数値: この音響目標に合わせる
+    # True なら、パラメータ表にこの役割がなくても未登録として報告しない
+    # （多段 EG のレベルなど、機種によっては存在しない項目）
+    optional: bool = False

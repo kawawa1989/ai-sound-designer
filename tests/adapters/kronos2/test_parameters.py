@@ -70,3 +70,23 @@ def test_docs_example_is_valid() -> None:
     data = json.loads(block)
     # 例のページ番号・名前は伏せ字なので、構造だけを確認する
     ParameterTable.model_validate(data)
+
+
+def test_project_al1_table_is_valid() -> None:
+    """data/kronos_parameters/al1.json（公式資料から作った表）がスキーマを満たす。"""
+    data_dir = Path(__file__).resolve().parents[3] / "data" / "kronos_parameters"
+    table = load_table(data_dir, "AL-1")
+    assert table is not None
+    for p in table.parameters:
+        assert p.source_ref.startswith("Parameter Guide 本文p."), p.id
+    # レシピで使う主要な役割はすべて表にある
+    for role in (
+        Role.OSCILLATOR_WAVEFORM,
+        Role.FILTER_TYPE,
+        Role.FILTER_CUTOFF,
+        Role.FILTER_EG_INTENSITY,
+        Role.AMP_EG_ATTACK,
+        Role.AMP_EG_SUSTAIN,
+        Role.AMP_EG_RELEASE,
+    ):
+        assert table.by_role(role) is not None, role

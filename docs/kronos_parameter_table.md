@@ -51,6 +51,7 @@
 | `min` / `max` / `step` | 数値パラメータの範囲と刻み（`choice` では不要） |
 | `default` | 初期化した Program での値（分かる場合のみ） |
 | `steps_per_octave` | 値 1 段が何分の 1 オクターブか（例: AL-1 の Filter A Frequency は 10、本文p.205）。×f0 で測った曲線を別の音程の参照音に使うとき、音程差のぶんだけ値をずらすのに使う |
+| `calibration_source` | 同じ尺度の別パラメータの ID。自分の曲線がないとき、そのパラメータの曲線を使う（例: Amp EG の Break レベルは Sustain の曲線） |
 | `choices` | 選択式の選択肢。`tags` で「どの種類の選択肢か」を示す |
 | `roles` | このパラメータが担う役割（下の表）。1 つのパラメータに複数付けてよい |
 | `source_ref` | 資料の該当ページ。必須 |
@@ -122,7 +123,7 @@
 | `filter_eg_decay` | `brightness_decay_time` |
 | `amp_eg_attack` | `attack_time` |
 | `amp_eg_decay` | `decay_time` |
-| `amp_eg_sustain` | `sustain_level` |
+| `amp_eg_sustain` | `sustain_level`（絶対音量で測り、いちばん大きい値の録音を 0 dB とした差にする。アタックの段を変える必要はない） |
 | `amp_eg_release` | `release_time` |
 | `noise_level` | `noisiness` |
 

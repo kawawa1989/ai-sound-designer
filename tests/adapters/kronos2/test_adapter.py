@@ -174,3 +174,38 @@ def test_parameter_catalog(parameter_dir: Path) -> None:
     assert f"test.{Role.FILTER_CUTOFF.value}" in ids
     assert "test.wave" not in ids and f"test.{Role.FILTER_RESONANCE.value}" not in ids
     assert Kronos2Adapter().calibratable_parameters() == ()
+
+
+def test_break_level_uses_sustain_curve(analyze_signal: Analyze, tmp_path: Path) -> None:
+    import json
+
+    table = full_table()
+    sustain_id = f"test.{Role.AMP_EG_SUSTAIN.value}"
+    for p in table["parameters"]:
+        if p["id"] == f"test.{Role.AMP_EG_BREAK_LEVEL.value}":
+            p["calibration_source"] = sustain_id
+    (tmp_path / "p").mkdir()
+    (tmp_path / "p" / "al1.json").write_text(json.dumps(table))
+    (tmp_path / "c").mkdir()
+    (tmp_path / "c" / "sus.json").write_text(
+        json.dumps(
+            {
+                "synth_id": "kronos2",
+                "parameter_id": sustain_id,
+                "feature": "sustain_level",
+                "unit": "dB",
+                "points": [
+                    {"parameter_value": 10, "feature_value": -20},
+                    {"parameter_value": 99, "feature_value": 0},
+                ],
+            }
+        )
+    )
+    adsr = ts.Adsr(attack_s=0.005, decay_s=0.2, sustain=0.5, release_s=0.3, note_s=1.2)
+    spec = spec_for(analyze_signal, "ad_sustain", ts.saw(adsr=adsr))
+    recipe = Kronos2Adapter(
+        parameter_dir=tmp_path / "p", calibration_dir=tmp_path / "c"
+    ).create_recipe(spec)
+    values = {s.parameter_id: s.value for s in recipe.steps}
+    assert values[sustain_id] == values[f"test.{Role.AMP_EG_BREAK_LEVEL.value}"]
+    assert isinstance(values[sustain_id], int)

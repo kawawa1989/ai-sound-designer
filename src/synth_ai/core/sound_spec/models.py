@@ -84,6 +84,8 @@ class LevelInfo(FrozenModel):
     snr_is_lower_bound: bool  # 末尾まで減衰しきっていて背景ノイズを直接測れない場合 True
     clip_ratio: float = Field(ge=0, le=1)
     dc_offset: float
+    # RMS 包絡のピークの絶対レベル。「ピーク基準 dB」の値を絶対レベルに直すのに使う
+    envelope_peak_dbfs: float | None = None
 
 
 class PitchEstimate(FrozenModel):

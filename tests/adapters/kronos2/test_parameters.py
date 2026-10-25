@@ -90,3 +90,17 @@ def test_project_al1_table_is_valid() -> None:
         Role.AMP_EG_RELEASE,
     ):
         assert table.by_role(role) is not None, role
+
+
+def test_calibration_source() -> None:
+    sustain = numeric(Role.AMP_EG_SUSTAIN)
+    brk = numeric(Role.AMP_EG_BREAK_LEVEL, calibration_source=sustain["id"])
+    table = ParameterTable.model_validate(full_table() | {"parameters": [sustain, brk]})
+    param = table.by_role(Role.AMP_EG_BREAK_LEVEL)
+    assert param is not None
+    assert table.curve_ids(param) == (brk["id"], sustain["id"])
+    with pytest.raises(ValidationError, match="calibration_source"):
+        ParameterTable.model_validate(
+            full_table()
+            | {"parameters": [numeric(Role.AMP_EG_BREAK_LEVEL, calibration_source="missing")]}
+        )

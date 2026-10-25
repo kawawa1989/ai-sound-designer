@@ -64,9 +64,30 @@ class SessionResult:
         return [m for m in self.points if m.feature_value is not None]
 
 
+# 録音ごとのピークを基準にすると、パラメータを変えたときにピーク自体も動いて測れない特徴。
+# キャリブレーションでは絶対レベル（dBFS）で測り、曲線を作るときに
+# 「いちばん大きいパラメータ値の録音との差」に直す（例: サステインはアタックのピークからの dB）
+ABSOLUTE_LEVEL_FEATURES = {Feature.SUSTAIN_LEVEL}
+
+
 def measure_feature(analysis: AudioAnalysis, feature: Feature) -> float | None:
     targets = {t.feature: t.value for t in quantitative_targets(analysis)}
     return targets.get(feature.value)
+
+
+def measure_for_calibration(analysis: AudioAnalysis, feature: Feature) -> float | None:
+    """キャリブレーション用の測定値。ABSOLUTE_LEVEL_FEATURES は絶対レベル（dBFS）。"""
+    if feature not in ABSOLUTE_LEVEL_FEATURES:
+        return measure_feature(analysis, feature)
+    env, peak = analysis.envelope, analysis.levels.envelope_peak_dbfs
+    if env is None or peak is None or env.sustain_level_db is None:
+        return None
+    return peak + env.sustain_level_db
+
+
+def calibration_unit(feature: Feature) -> str:
+    """セッション中に表示する単位。"""
+    return "dBFS" if feature in ABSOLUTE_LEVEL_FEATURES else UNITS[feature]
 
 
 def relevant_issues(analysis: AudioAnalysis) -> tuple[Issue, ...]:
@@ -99,7 +120,7 @@ def run_session(
             analysis = analyze(path)
             measurement = Measurement(
                 parameter_value=value,
-                feature_value=measure_feature(analysis, plan.feature),
+                feature_value=measure_for_calibration(analysis, plan.feature),
                 recording=path,
                 issues=relevant_issues(analysis),
             )
@@ -120,24 +141,32 @@ class NotEnoughPointsError(ValueError):
 
 
 def build_curve(result: SessionResult, measured_at: date | None = None) -> CalibrationCurve:
-    usable = result.usable
+    usable = sorted(result.usable, key=lambda m: m.parameter_value)
     if len(usable) < 2:
         raise NotEnoughPointsError(
             f"測定できた点が {len(usable)} 個です。曲線には 2 個以上必要です"
         )
     plan = result.plan
+    values = [m.feature_value for m in usable if m.feature_value is not None]
+    conditions = plan.conditions
+    if plan.feature in ABSOLUTE_LEVEL_FEATURES:
+        # いちばん大きいパラメータ値の録音を 0 dB とする
+        top = usable[-1]
+        assert top.feature_value is not None
+        values = [v - top.feature_value for v in values]
+        note = f"値 {top.parameter_value:g} の録音を 0 dB とした音量差"
+        conditions = f"{conditions} / {note}" if conditions else note
     return CalibrationCurve(
         synth_id=plan.synth_id,
         parameter_id=plan.parameter_id,
         feature=plan.feature.value,
         unit=UNITS[plan.feature],
-        conditions=plan.conditions,
+        conditions=conditions,
         measured_at=(measured_at or date.today()).isoformat(),
         reference_note=plan.reference_note,
         points=tuple(
-            CalibrationPoint(parameter_value=m.parameter_value, feature_value=m.feature_value)
-            for m in sorted(usable, key=lambda m: m.parameter_value)
-            if m.feature_value is not None
+            CalibrationPoint(parameter_value=m.parameter_value, feature_value=round(v, 3))
+            for m, v in zip(usable, values, strict=True)
         ),
     )
 
@@ -173,7 +202,7 @@ def rebuild_session(
     result = SessionResult(plan)
     for value, path in recordings.items():
         analysis = analyze(path)
-        feature_value = measure_feature(analysis, plan.feature)
+        feature_value = measure_for_calibration(analysis, plan.feature)
         if feature_value is None:
             result.skipped.append(value)
             continue

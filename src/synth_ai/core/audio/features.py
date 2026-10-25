@@ -46,6 +46,7 @@ class Envelope:
     hop_s: float
     frame_s: float
     db: np.ndarray  # ピーク基準 dB（最大値 0）
+    peak_dbfs: float = 0.0  # 包絡のピークの絶対レベル（dBFS）
 
     @property
     def times(self) -> np.ndarray:
@@ -65,7 +66,8 @@ def rms_envelope(x: np.ndarray, sr: int, f0_hz: float | None = None) -> Envelope
     frame = max(frame, hop)
     rms = librosa.feature.rms(y=x, frame_length=frame, hop_length=hop, center=True)[0]
     db = to_db(rms)
-    return Envelope(hop_s=hop / sr, frame_s=frame / sr, db=db - float(db.max()))
+    peak = float(db.max())
+    return Envelope(hop_s=hop / sr, frame_s=frame / sr, db=db - peak, peak_dbfs=peak)
 
 
 def noise_floor_db(env: Envelope) -> float:

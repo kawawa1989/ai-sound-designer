@@ -110,3 +110,34 @@ def test_latest_recordings_and_rebuild(tmp_path: Path) -> None:
     assert recordings[50.0].name == "v50_try2.wav"
     result = rebuild_session(PLAN, recordings, analyze)
     assert build_curve(result).is_monotonic
+
+
+def test_sustain_is_measured_against_loudest_value(tmp_path: Path) -> None:
+    """サステインは録音ごとのピークではなく、最大値の録音との絶対音量差で測る。
+
+    実機で起きた例: 発音直後の段（ピーク）が一定の 0.75 で、サステインのほうが大きい値では
+    サステイン自身がピークになり、録音ごとのピーク基準ではどれも 0 dB に見えた。
+    """
+    import numpy as np
+
+    from synth_ai.core.calibration.session import rebuild_session
+
+    sr = 48_000
+    t = np.arange(int(2.0 * sr)) / sr
+
+    def tone(sustain: float) -> np.ndarray:
+        env = np.interp(t, [0, 0.005, 0.105, 1.6, 1.65], [0, 0.75, sustain, sustain, 0])
+        saw = ts.additive(261.63, len(t) / sr, lambda k, tt: np.full_like(tt, 1.0 / k))
+        return 0.3 * saw * env
+
+    amplitudes = {20.0: 0.2, 50.0: 0.5, 99.0: 1.0}
+    recordings = {
+        v: ts.write_wav(tmp_path / f"v{v:g}_try1.wav", tone(a)) for v, a in amplitudes.items()
+    }
+    plan = CalibrationPlan("s", "p.sus", "Sustain", Feature.SUSTAIN_LEVEL, (20.0, 50.0, 99.0), "")
+    curve = build_curve(rebuild_session(plan, recordings, analyze))
+    measured = [p.feature_value for p in curve.points]
+    expected = [20 * np.log10(a) for a in amplitudes.values()]
+    assert measured == pytest.approx(expected, abs=0.3)
+    assert curve.unit == "dB"
+    assert "値 99 の録音を 0 dB" in curve.conditions

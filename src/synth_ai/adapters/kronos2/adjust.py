@@ -84,7 +84,16 @@ def _numeric_suggestion(
     f0_hz: float | None = None,
 ) -> AdjustmentSuggestion:
     param = table.by_role(role) if table else None
-    curve = calibrations.get(param.id, feature.value) if param else None
+    curve = None
+    if param is not None and table is not None:
+        curve = next(
+            (
+                c
+                for pid in table.curve_ids(param)
+                if (c := calibrations.get(pid, feature.value)) is not None
+            ),
+            None,
+        )
     calibrated = False
     if curve is not None and curve.is_monotonic and param and param.min is not None:
         assert param.max is not None

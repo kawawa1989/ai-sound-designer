@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0",
+  "synth_id": "kronos2",
+  "parameter_id": "al1.amp_eg.level.sustain",
+  "feature": "sustain_level",
+  "unit": "dB",
+  "conditions": "U-CC000 AL-1 BASIC SOUND / C4 / velocity 100 / hold 2s / tail 2s / 値 99 の録音を 0 dB とした音量差",
+  "measured_at": "2026-10-25",
+  "reference_note": "C4",
+  "points": [
+    {
+      "parameter_value": 10.0,
+      "feature_value": -19.913
+    },
+    {
+      "parameter_value": 20.0,
+      "feature_value": -13.891
+    },
+    {
+      "parameter_value": 30.0,
+      "feature_value": -10.37
+    },
+    {
+      "parameter_value": 40.0,
+      "feature_value": -7.871
+    },
+    {
+      "parameter_value": 50.0,
+      "feature_value": -5.933
+    },
+    {
+      "parameter_value": 60.0,
+      "feature_value": -4.349
+    },
+    {
+      "parameter_value": 80.0,
+      "feature_value": -1.85
+    },
+    {
+      "parameter_value": 90.0,
+      "feature_value": -0.827
+    },
+    {
+      "parameter_value": 99.0,
+      "feature_value": 0.0
+    }
+  ]
+}

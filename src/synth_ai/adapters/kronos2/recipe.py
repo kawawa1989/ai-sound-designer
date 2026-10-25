@@ -139,7 +139,15 @@ def render_steps(
                 bound = 0.0 if param.min <= 0 <= param.max else param.min
             value = param.clamp(bound)
         elif intent.target is not None and param.kind is not ParameterKind.CHOICE:
-            curve = calibrations.get(param.id, intent.target.feature)
+            assert table is not None
+            curve = next(
+                (
+                    c
+                    for pid in table.curve_ids(param)
+                    if (c := calibrations.get(pid, intent.target.feature)) is not None
+                ),
+                None,
+            )
             estimate = curve.inverse(intent.target.value) if curve else None
             if curve is not None and estimate is not None:
                 shift = pitch_shift(param, curve, f0_hz)

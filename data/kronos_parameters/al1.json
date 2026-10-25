@@ -248,8 +248,10 @@
       "min": 0,
       "max": 99,
       "roles": ["amp_eg_break_level"],
+      "calibration_source": "al1.amp_eg.level.sustain",
       "source_ref": "Parameter Guide 本文p.215",
-      "verified": true
+      "verified": true,
+      "notes": "Sustain と同じ Amp EG のレベル（00…99）なので、Sustain の曲線を使う"
     },
     {
       "id": "al1.amp_eg.level.sustain",

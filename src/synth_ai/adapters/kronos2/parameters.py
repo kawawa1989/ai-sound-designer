@@ -43,6 +43,8 @@ class ParameterDef(BaseModel):
     unit: str | None = None
     # 値 1 段が周波数で何分の 1 オクターブか（カットオフなど）。音程の違う参照音に合わせる補正に使う
     steps_per_octave: float | None = Field(default=None, gt=0)
+    # 同じ尺度の別パラメータの ID。自分の曲線がなければ、そのパラメータの曲線を使う
+    calibration_source: str | None = None
     choices: tuple[Choice, ...] = ()
     roles: tuple[Role, ...] = ()
     source_ref: str  # 公式資料の該当箇所（例: "Parameter Guide p.123"）
@@ -97,11 +99,22 @@ class ParameterTable(BaseModel):
         duplicated = sorted({i for i in ids if ids.count(i) > 1})
         if duplicated:
             raise ValueError(f"duplicated parameter ids: {duplicated}")
+        unknown = sorted(
+            p.calibration_source
+            for p in self.parameters
+            if p.calibration_source and p.calibration_source not in ids
+        )
+        if unknown:
+            raise ValueError(f"calibration_source not in table: {unknown}")
         return self
 
     def by_role(self, role: Role) -> ParameterDef | None:
         """役割を担うパラメータ。複数あれば表の先頭のもの。"""
         return next((p for p in self.parameters if role in p.roles), None)
+
+    def curve_ids(self, param: ParameterDef) -> tuple[str, ...]:
+        """キャリブレーション曲線を探す ID の順番（自分 → calibration_source）。"""
+        return (param.id,) + ((param.calibration_source,) if param.calibration_source else ())
 
     def by_id(self, parameter_id: str) -> ParameterDef | None:
         return next((p for p in self.parameters if p.id == parameter_id), None)

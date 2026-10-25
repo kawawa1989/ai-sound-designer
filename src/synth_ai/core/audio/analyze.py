@@ -20,7 +20,8 @@ from synth_ai.core.sound_spec.models import (
     TimeSeries,
 )
 
-ANALYZER_VERSION = "0.2.0"  # 0.2.0: スペクトル重心・ロールオフにノイズゲート
+# 0.2.0: スペクトル重心・ロールオフにノイズゲート / 0.2.1: 包絡ピークの絶対レベルを記録
+ANALYZER_VERSION = "0.2.1"
 DECIMALS = 4
 PITCH_CONFIDENCE_MIN = 0.5
 HARMONIC_RATIO_MIN = 0.7
@@ -138,6 +139,7 @@ def analyze_audio(audio: LoadedAudio, analysis_id: str) -> AnalysisResult:
         snr_is_lower_bound=not noise_measured,
         clip_ratio=audio.clip_ratio,
         dc_offset=audio.dc_offset,
+        envelope_peak_dbfs=env.peak_dbfs,
     )
 
     step = int(round(spec.hop_s / env.hop_s))

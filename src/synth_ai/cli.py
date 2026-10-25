@@ -370,10 +370,11 @@ def _record_calibration(
         Measurement,
         Step,
         Verdict,
+        calibration_unit,
         recording_name,
         run_session,
     )
-    from synth_ai.core.sound_spec.features import LABELS, UNITS
+    from synth_ai.core.sound_spec.features import LABELS
     from synth_ai.infrastructure.capture.recorder import (
         SoundDeviceRecorder,
         capture_note,
@@ -381,7 +382,7 @@ def _record_calibration(
     )
     from synth_ai.infrastructure.midi.sender import open_sender
 
-    label, unit = LABELS[plan.feature], UNITS[plan.feature]
+    label, unit = LABELS[plan.feature], calibration_unit(plan.feature)
     recorder = SoundDeviceRecorder(
         cfg.capture.input_device, cfg.capture.sample_rate, cfg.capture.channels
     )
@@ -592,15 +593,15 @@ def calibrate(
         except (CaptureError, MidiError, AudioLoadError) as exc:
             raise _fail(exc) from exc
 
-    typer.echo("\n値 → 特徴:")
-    for m in session.points:
-        typer.echo(f"  {m.parameter_value:>6g} → {m.feature_value:g} {unit}")
-    if session.skipped:
-        typer.echo(f"  使わなかった値: {', '.join(f'{v:g}' for v in session.skipped)}")
     try:
         curve = build_curve(session, measured_at)
     except NotEnoughPointsError as exc:
         raise _fail(exc) from exc
+    typer.echo("\n値 → 特徴:")
+    for point in curve.points:
+        typer.echo(f"  {point.parameter_value:>6g} → {point.feature_value:g} {unit}")
+    if session.skipped:
+        typer.echo(f"  使わなかった値: {', '.join(f'{v:g}' for v in session.skipped)}")
     if not curve.is_monotonic:
         typer.secho(
             "注意: 値を上げても特徴が一方向に変わっていません。"

@@ -20,7 +20,7 @@ from synth_ai.core.sound_spec.models import (
     TimeSeries,
 )
 
-ANALYZER_VERSION = "0.1.0"
+ANALYZER_VERSION = "0.2.0"  # 0.2.0: スペクトル重心・ロールオフにノイズゲート
 DECIMALS = 4
 PITCH_CONFIDENCE_MIN = 0.5
 HARMONIC_RATIO_MIN = 0.7

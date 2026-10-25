@@ -26,6 +26,7 @@ STFT_N_FFT = 4096
 STFT_HOP_S = 0.01
 ENV_HOP_S = 0.0025
 ACTIVE_DB = -40.0  # スペクトル特徴を計算するフレームの下限（ピーク基準）
+SPECTRAL_GATE_DB = 60.0  # 重心の計算で無視する、フレーム内の最大成分からの差
 PLATEAU_SLOPE_DB_S = 4.0  # これより緩い傾きを「サステイン」とみなす
 PLATEAU_MIN_S = 0.15
 RELEASE_DROP_DB = 20.0
@@ -312,10 +313,16 @@ class SpectralSeries:
 
 
 def spectral_series(spec: Spectrogram, min_db: float = ACTIVE_DB) -> SpectralSeries:
-    """min_db より小さいフレーム（背景ノイズのみの区間など）は重み 0 にする。"""
+    """min_db より小さいフレーム（背景ノイズのみの区間など）は重み 0 にする。
+
+    重心とロールオフは、各フレームで最大の成分より SPECTRAL_GATE_DB 以上小さい周波数ビンを
+    除いて計算する。小さな音では広い帯域に広がる背景ノイズが重心を押し上げてしまうため
+    （フィルターを閉じると明るさが上がって見える）。平坦度はノイズ感を測るので除かない。
+    """
     S = spec.magnitude
-    centroid = librosa.feature.spectral_centroid(S=S, freq=spec.freqs)[0]
-    rolloff = librosa.feature.spectral_rolloff(S=S, freq=spec.freqs, roll_percent=0.85)[0]
+    gated = np.where(S.max(axis=0, keepdims=True) * 10 ** (-SPECTRAL_GATE_DB / 20) <= S, S, 0.0)
+    centroid = librosa.feature.spectral_centroid(S=gated, freq=spec.freqs)[0]
+    rolloff = librosa.feature.spectral_rolloff(S=gated, freq=spec.freqs, roll_percent=0.85)[0]
     flatness = librosa.feature.spectral_flatness(S=S, amin=1e-6)[0]
     weight = np.where(spec.frame_db > max(min_db, ACTIVE_DB), 10 ** (spec.frame_db / 10), 0.0)
     return SpectralSeries(centroid, rolloff, flatness, weight)

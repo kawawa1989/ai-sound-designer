@@ -50,6 +50,7 @@
 | `kind` | `int` / `float` / `choice` |
 | `min` / `max` / `step` | 数値パラメータの範囲と刻み（`choice` では不要） |
 | `default` | 初期化した Program での値（分かる場合のみ） |
+| `steps_per_octave` | 値 1 段が何分の 1 オクターブか（例: AL-1 の Filter A Frequency は 10、本文p.205）。×f0 で測った曲線を別の音程の参照音に使うとき、音程差のぶんだけ値をずらすのに使う |
 | `choices` | 選択式の選択肢。`tags` で「どの種類の選択肢か」を示す |
 | `roles` | このパラメータが担う役割（下の表）。1 つのパラメータに複数付けてよい |
 | `source_ref` | 資料の該当ページ。必須 |
@@ -109,6 +110,9 @@
 ```
 
 `feature` は `src/synth_ai/core/sound_spec/features.py` の名前を使う。
+`reference_note` は測定した音（`calibrate` が自動で記録する）。カットオフのように ×f0 の特徴で測った曲線は、
+参照音の音程が違うと `steps_per_octave × log2(参照音の f0 / 測定音の f0)` 段だけずらして使う
+（例: C4 で測った曲線を C3 の参照音に使うと −10 段）。
 対応の目安:
 
 | 役割 | 測る特徴（feature） |

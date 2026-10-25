@@ -1,0 +1,40 @@
+{
+  "schema_version": "1.0",
+  "synth_id": "kronos2",
+  "parameter_id": "al1.filter_a.frequency",
+  "feature": "brightness_end",
+  "unit": "x f0",
+  "conditions": "U-CC000 AL-1 BASIC SOUND / C4 / velocity 100 / hold 1.5s / tail 2s",
+  "measured_at": "2026-10-25",
+  "reference_note": "C4",
+  "points": [
+    {
+      "parameter_value": 15.0,
+      "feature_value": 1.291
+    },
+    {
+      "parameter_value": 30.0,
+      "feature_value": 1.447
+    },
+    {
+      "parameter_value": 45.0,
+      "feature_value": 2.137
+    },
+    {
+      "parameter_value": 60.0,
+      "feature_value": 3.849
+    },
+    {
+      "parameter_value": 75.0,
+      "feature_value": 7.374
+    },
+    {
+      "parameter_value": 90.0,
+      "feature_value": 12.711
+    },
+    {
+      "parameter_value": 99.0,
+      "feature_value": 13.058
+    }
+  ]
+}

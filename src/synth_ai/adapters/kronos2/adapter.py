@@ -94,7 +94,9 @@ class Kronos2Adapter:
         intents = INTENT_BUILDERS[chosen.engine](spec)
         table = load_table(self._parameter_dir, chosen.engine)
         calibrations = CalibrationSet.load(self._calibration_dir, self.synth_id)
-        rendered = render_steps(intents, table, calibrations)
+        rendered = render_steps(
+            intents, table, calibrations, spec.pitch.f0_hz if spec.pitch else None
+        )
 
         if table is None:
             location = (

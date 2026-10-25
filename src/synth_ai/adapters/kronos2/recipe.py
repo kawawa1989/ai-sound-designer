@@ -2,16 +2,20 @@
 
 - 表にない役割は手順にしない（未登録として不確実性に記録する）
 - 値はキャリブレーション曲線から逆引きする。曲線がなければ値を空にして音響目標を示す
+- ×f0 で測った曲線を、測定時と違う音程の参照音に使うときは、パラメータの
+  steps_per_octave（1 オクターブあたりの段数）で音程差のぶんだけ値をずらす
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from synth_ai.adapters.kronos2.intents import Intent
-from synth_ai.adapters.kronos2.parameters import ParameterKind, ParameterTable
+from synth_ai.adapters.kronos2.parameters import ParameterDef, ParameterKind, ParameterTable
 from synth_ai.adapters.kronos2.roles import ROLE_LABELS
-from synth_ai.core.calibration.models import CalibrationSet
+from synth_ai.core.audio.notes import hz_to_note, note_to_hz
+from synth_ai.core.calibration.models import CalibrationCurve, CalibrationSet
 from synth_ai.core.sound_spec.features import LABELS, Feature
 from synth_ai.core.sound_spec.models import QuantTarget, RecipeStep, StepStatus
 
@@ -22,6 +26,49 @@ class RenderResult:
     uncertainties: list[str] = field(default_factory=list)
     unregistered: list[Intent] = field(default_factory=list)
     uncalibrated: int = 0
+
+
+# 基音に対する比で表す特徴。音程が変わると、同じ値でも必要なパラメータ値が変わる
+PITCH_RELATIVE_UNITS = {"x f0"}
+MIN_SHIFT_STEPS = 0.5
+
+
+@dataclass(frozen=True)
+class PitchShift:
+    steps: float  # 逆引きした値に足す段数
+    measured_note: str  # 曲線を測った音
+    target_note: str  # 参照音
+
+    def describe(self) -> str:
+        return (
+            f"（参照音 {self.target_note} と測定音 {self.measured_note} の音程差で"
+            f" {self.steps:+.0f} 段補正）"
+        )
+
+
+def pitch_shift(
+    param: ParameterDef, curve: CalibrationCurve, f0_hz: float | None
+) -> PitchShift | None:
+    """音程の違う参照音に曲線を使うときのずれ。補正できない・不要なら None。
+
+    カットオフのように周波数を決めるパラメータは、同じ「×f0 の明るさ」を得るのに
+    音程が 1 オクターブ上がれば 1 オクターブ分（steps_per_octave 段）上げる必要がある。
+    """
+    if (
+        param.steps_per_octave is None
+        or curve.reference_note is None
+        or curve.unit not in PITCH_RELATIVE_UNITS
+        or not f0_hz
+    ):
+        return None
+    try:
+        measured_hz = note_to_hz(curve.reference_note)
+    except ValueError:
+        return None
+    steps = param.steps_per_octave * math.log2(f0_hz / measured_hz)
+    if abs(steps) < MIN_SHIFT_STEPS:
+        return None
+    return PitchShift(steps, curve.reference_note, hz_to_note(f0_hz)[0])
 
 
 def _num(value: float) -> str:
@@ -57,8 +104,12 @@ def describe_intent(intent: Intent) -> str:
 
 
 def render_steps(
-    intents: list[Intent], table: ParameterTable | None, calibrations: CalibrationSet
+    intents: list[Intent],
+    table: ParameterTable | None,
+    calibrations: CalibrationSet,
+    f0_hz: float | None = None,
 ) -> RenderResult:
+    """f0_hz は参照音の基音（音程の補正に使う）。"""
     result = RenderResult()
     for intent in intents:
         param = table.by_role(intent.role) if table else None
@@ -91,11 +142,14 @@ def render_steps(
             curve = calibrations.get(param.id, intent.target.feature)
             estimate = curve.inverse(intent.target.value) if curve else None
             if curve is not None and estimate is not None:
-                value = param.clamp(estimate)
+                shift = pitch_shift(param, curve, f0_hz)
+                value = param.clamp(estimate + (shift.steps if shift else 0.0))
                 if not curve.covers(intent.target.value):
                     reason += "（目標が測定範囲外のため、測定した端の値）"
                 else:
                     reason += "（キャリブレーション表から算出）"
+                if shift:
+                    reason += shift.describe()
             else:
                 result.uncalibrated += 1
 

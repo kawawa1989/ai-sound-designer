@@ -69,6 +69,7 @@
       "min": 0,
       "max": 99,
       "roles": ["filter_cutoff"],
+      "steps_per_octave": 10,
       "source_ref": "Parameter Guide 本文p.205",
       "verified": true,
       "notes": "1 段 = 1/10 オクターブ。Fine（–99…+99）で 1/100 段ずつ微調整できる"

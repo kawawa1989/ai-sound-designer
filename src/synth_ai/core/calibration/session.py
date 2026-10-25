@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
@@ -40,6 +41,7 @@ class CalibrationPlan:
     feature: Feature
     values: tuple[float, ...]
     conditions: str
+    reference_note: str | None = None  # 測定に使った音名
 
 
 @dataclass(frozen=True)
@@ -131,6 +133,7 @@ def build_curve(result: SessionResult, measured_at: date | None = None) -> Calib
         unit=UNITS[plan.feature],
         conditions=plan.conditions,
         measured_at=(measured_at or date.today()).isoformat(),
+        reference_note=plan.reference_note,
         points=tuple(
             CalibrationPoint(parameter_value=m.parameter_value, feature_value=m.feature_value)
             for m in sorted(usable, key=lambda m: m.parameter_value)
@@ -141,6 +144,41 @@ def build_curve(result: SessionResult, measured_at: date | None = None) -> Calib
 
 def curve_filename(parameter_id: str, feature: Feature) -> str:
     return f"{parameter_id}__{feature.value}.json"
+
+
+_RECORDING = re.compile(r"^v(-?\d+(?:\.\d+)?)_try(\d+)\.wav$")
+
+
+def recording_name(value: float, attempt: int) -> str:
+    return f"v{value:g}_try{attempt}.wav"
+
+
+def latest_recordings(directory: Path) -> dict[float, Path]:
+    """セッションの録音（v<値>_try<回>.wav）から、値ごとに最後に録ったものを返す。"""
+    latest: dict[float, tuple[int, Path]] = {}
+    for path in directory.glob("v*_try*.wav"):
+        match = _RECORDING.match(path.name)
+        if not match:
+            continue
+        value, attempt = float(match.group(1)), int(match.group(2))
+        if value not in latest or attempt > latest[value][0]:
+            latest[value] = (attempt, path)
+    return {v: latest[v][1] for v in sorted(latest)}
+
+
+def rebuild_session(
+    plan: CalibrationPlan, recordings: dict[float, Path], analyze: Callable[[Path], AudioAnalysis]
+) -> SessionResult:
+    """保存済みの録音を解析し直してセッション結果を作る（解析方法を改良したとき用）。"""
+    result = SessionResult(plan)
+    for value, path in recordings.items():
+        analysis = analyze(path)
+        feature_value = measure_feature(analysis, plan.feature)
+        if feature_value is None:
+            result.skipped.append(value)
+            continue
+        result.points.append(Measurement(value, feature_value, path, relevant_issues(analysis)))
+    return result
 
 
 # 特徴を正しく測るための、押さえる時間・余韻の最低限（秒）

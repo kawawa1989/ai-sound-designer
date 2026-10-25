@@ -31,6 +31,8 @@ class CalibrationCurve(BaseModel):
     unit: str
     conditions: str = ""  # 測定条件（他のパラメータの設定、音程など）
     measured_at: str = ""  # 測定日（YYYY-MM-DD）
+    # 測定した音の音名（例: "C4"）。×f0 のように音程で意味が変わる特徴の補正に使う
+    reference_note: str | None = None
     points: tuple[CalibrationPoint, ...] = Field(min_length=2)
 
     @model_validator(mode="after")

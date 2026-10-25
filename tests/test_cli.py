@@ -179,6 +179,7 @@ def test_calibrate_interactive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     assert [p.parameter_value for p in curve.points] == [0, 30, 60]
     assert curve.is_monotonic
     assert "hold 3s" in curve.conditions  # アタックの測定では最低 3 秒押さえる
+    assert curve.reference_note == "C4"
     assert len(list((tmp_path / "runs" / "calibration").rglob("*.wav"))) == 4
 
 
@@ -186,3 +187,52 @@ def test_calibrate_lists_parameters() -> None:
     result = CliRunner().invoke(app, ["calibrate", "--config", "/nonexistent.yaml"])
     assert result.exit_code == 0
     assert "al1.filter_a.frequency" in result.output
+
+
+def test_calibrate_from_recordings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from synth_ai import registry
+    from synth_ai.core.calibration.models import CalibrationCurve
+    from synth_ai.core.synthesis.test_signals import Adsr
+
+    monkeypatch.setitem(registry.CALIBRATION_DIRS, "kronos2", tmp_path / "cal")
+    session = tmp_path / "session"
+    for value, attack in ((0, 0.005), (30, 0.1), (60, 0.4)):
+        write_wav(session / f"v{value}_try1.wav", saw(adsr=Adsr(attack_s=attack, note_s=1.5)))
+    path = tmp_path / "cal" / "al1.amp_eg.time.attack__attack_time.json"
+    path.parent.mkdir()
+    path.write_text(
+        CalibrationCurve(
+            synth_id="kronos2",
+            parameter_id="al1.amp_eg.time.attack",
+            feature="attack_time",
+            unit="ms",
+            conditions="元の条件",
+            measured_at="2026-10-25",
+            points=(
+                {"parameter_value": 0, "feature_value": 1},
+                {"parameter_value": 1, "feature_value": 2},
+            ),
+        ).model_dump_json()
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "calibrate",
+            "al1.amp_eg.time.attack",
+            "--from-recordings",
+            str(session),
+            "--overwrite",
+            "--config",
+            str(tmp_path / "none.yaml"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    curve = CalibrationCurve.model_validate_json(path.read_text())
+    assert [p.parameter_value for p in curve.points] == [0, 30, 60]
+    assert curve.conditions == "元の条件" and curve.measured_at == "2026-10-25"
+    # --values で使う録音を絞れる
+    args = ["calibrate", "al1.amp_eg.time.attack", "--from-recordings", str(session)]
+    args += ["--values", "30,60", "--overwrite", "--config", str(tmp_path / "none.yaml")]
+    assert CliRunner().invoke(app, args).exit_code == 0
+    curve = CalibrationCurve.model_validate_json(path.read_text())
+    assert [p.parameter_value for p in curve.points] == [30, 60]

@@ -169,3 +169,16 @@ def test_same_input_gives_same_json(tmp_path: Path) -> None:
 def test_default_id_from_hash(tmp_path: Path) -> None:
     analysis = analyze_file(ts.write_wav(tmp_path / "a.wav", ts.saw())).analysis
     assert analysis.analysis_id == f"ref-{analysis.source.sha256[:8]}"
+
+
+def test_quiet_dark_sound_is_not_brightened_by_noise_floor(analyze_signal: Analyze) -> None:
+    """フィルターを閉じた小さな音でも、録音系の背景ノイズで明るさが上がって見えない。"""
+    dark = ts.saw_filter_sweep(f0=261.63, cutoff_start_hz=300.0, cutoff_end_hz=300.0)
+    rng = np.random.default_rng(3)
+    noise = rng.normal(0, 1e-5, len(dark) + 48_000)  # 約 -100 dBFS の背景ノイズ
+    loud = ts.with_silence(dark, 0.0, 1.0) + noise
+    quiet = ts.with_silence(dark * 0.02, 0.0, 1.0) + noise  # 約 -40 dBFS
+    loud_s = analyze_signal("dark_loud", loud).analysis.spectral
+    quiet_s = analyze_signal("dark_quiet", quiet).analysis.spectral
+    assert loud_s is not None and quiet_s is not None
+    assert quiet_s.centroid_hz_end == pytest.approx(loud_s.centroid_hz_end, rel=0.15)

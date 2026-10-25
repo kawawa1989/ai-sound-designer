@@ -95,3 +95,18 @@ def test_curve_filename() -> None:
     assert curve_filename("al1.amp_eg.time.attack", Feature.ATTACK_TIME) == (
         "al1.amp_eg.time.attack__attack_time.json"
     )
+
+
+def test_latest_recordings_and_rebuild(tmp_path: Path) -> None:
+    from synth_ai.core.calibration.session import latest_recordings, rebuild_session
+
+    for value, attempts in ((0.0, 1), (50.0, 2), (99.0, 1)):
+        for attempt in range(1, attempts + 1):
+            adsr = ts.Adsr(attack_s=ATTACKS[value], note_s=1.5)
+            ts.write_wav(tmp_path / f"v{value:g}_try{attempt}.wav", ts.saw(adsr=adsr))
+    (tmp_path / "notes.wav").write_bytes(b"")  # 名前の合わないファイルは無視
+    recordings = latest_recordings(tmp_path)
+    assert list(recordings) == [0.0, 50.0, 99.0]
+    assert recordings[50.0].name == "v50_try2.wav"
+    result = rebuild_session(PLAN, recordings, analyze)
+    assert build_curve(result).is_monotonic

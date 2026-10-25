@@ -12,6 +12,8 @@ from synth_ai import __version__
 
 if TYPE_CHECKING:
     from synth_ai.config import LocalConfig
+    from synth_ai.core.calibration.session import CalibrationPlan, SessionResult
+    from synth_ai.infrastructure.capture.recorder import CaptureSettings
 from synth_ai.registry import ADAPTER_FACTORIES, get_adapter
 
 app = typer.Typer(no_args_is_help=True, help="AI Sound Designer")
@@ -353,6 +355,72 @@ def capture(
         compare(run_dir, out, cfg.synth, plots=True)
 
 
+def _record_calibration(
+    cfg: LocalConfig,
+    plan: CalibrationPlan,
+    settings: CaptureSettings,
+    manual: bool,
+    session_dir: Path,
+) -> SessionResult:
+    """値ごとに本体の操作を促し、MIDI で発音・録音・解析する対話ループ。"""
+    from contextlib import nullcontext
+
+    from synth_ai.core.audio.analyze import analyze_file
+    from synth_ai.core.calibration.session import (
+        Measurement,
+        Step,
+        Verdict,
+        recording_name,
+        run_session,
+    )
+    from synth_ai.core.sound_spec.features import LABELS, UNITS
+    from synth_ai.infrastructure.capture.recorder import (
+        SoundDeviceRecorder,
+        capture_note,
+        write_capture,
+    )
+    from synth_ai.infrastructure.midi.sender import open_sender
+
+    label, unit = LABELS[plan.feature], UNITS[plan.feature]
+    recorder = SoundDeviceRecorder(
+        cfg.capture.input_device, cfg.capture.sample_rate, cfg.capture.channels
+    )
+    use_midi = not manual and cfg.midi.output_port is not None
+    sender_ctx = (
+        open_sender(cfg.midi.output_port, cfg.midi.channel)  # type: ignore[arg-type]
+        if use_midi
+        else nullcontext(None)
+    )
+
+    def ask(text: str) -> str:
+        return str(typer.prompt(text, default="", show_default=False)).strip().lower()
+
+    with sender_ctx as sender:
+
+        def ask_to_set(index: int, value: float) -> Step:
+            answer = ask(
+                f"[{index + 1}/{len(plan.values)}] {plan.parameter_label} を {value:g} にして"
+                " Enter（s: スキップ / q: ここで終了）"
+            )
+            return {"s": Step.SKIP, "q": Step.QUIT}.get(answer, Step.GO)
+
+        def record(value: float, attempt: int) -> Path:
+            result = capture_note(recorder, sender, settings, prompt=typer.echo)
+            for w in result.warnings:
+                typer.secho(f"  注意: {w}", fg=typer.colors.YELLOW)
+            return write_capture(session_dir / recording_name(value, attempt), result)
+
+        def confirm(m: Measurement) -> Verdict:
+            shown = "測れませんでした" if m.feature_value is None else f"{m.feature_value:g} {unit}"
+            typer.echo(f"  → {label}: {shown}")
+            for issue in m.issues:
+                typer.secho(f"  注意: {issue.message}", fg=typer.colors.YELLOW)
+            answer = ask("  Enter: 採用 / r: 録り直し / s: この値は使わない")
+            return {"r": Verdict.RETRY, "s": Verdict.SKIP}.get(answer, Verdict.ACCEPT)
+
+        return run_session(plan, ask_to_set, record, lambda p: analyze_file(p).analysis, confirm)
+
+
 def _default_values(lo: float, hi: float, count: int = 8) -> tuple[float, ...]:
     """範囲を count 段に分けた整数値。両極性の範囲は 0 から上限まで。"""
     start = 0.0 if lo < 0 < hi else lo
@@ -378,38 +446,41 @@ def calibrate(
     conditions: Annotated[str, typer.Option(help="測定条件のメモ（基準の音色など）")] = "",
     manual: Annotated[bool, typer.Option(help="MIDI を使わず手で弾く")] = False,
     overwrite: Annotated[bool, typer.Option(help="既存の曲線を確認なしで上書きする")] = False,
+    from_recordings: Annotated[
+        Path | None,
+        typer.Option(
+            "--from-recordings",
+            help="録音せず、以前のセッションの録音（runs/calibration/...）を解析し直して曲線を作る",
+        ),
+    ] = None,
     config: ConfigOption = None,
 ) -> None:
     """実機でパラメータを数段階変えて録音し、キャリブレーション曲線を作る（対話式）。"""
-    from contextlib import nullcontext
-    from datetime import datetime
+    from dataclasses import replace
+    from datetime import date, datetime
 
     from synth_ai.adapters.base import ParameterCatalog
     from synth_ai.core.audio.analyze import analyze_file
     from synth_ai.core.audio.load import AudioLoadError
     from synth_ai.core.audio.notes import note_to_midi
+    from synth_ai.core.calibration.models import CalibrationCurve
     from synth_ai.core.calibration.session import (
         MIN_HOLD_S,
         MIN_TAIL_S,
         CalibrationPlan,
-        Measurement,
         NotEnoughPointsError,
-        Step,
-        Verdict,
         build_curve,
         curve_filename,
-        run_session,
+        latest_recordings,
+        rebuild_session,
     )
     from synth_ai.core.sound_spec.features import LABELS, UNITS, Feature
-    from synth_ai.core.sound_spec.io import save_json
+    from synth_ai.core.sound_spec.io import load_json, save_json
     from synth_ai.infrastructure.capture.recorder import (
         CaptureError,
         CaptureSettings,
-        SoundDeviceRecorder,
-        capture_note,
-        write_capture,
     )
-    from synth_ai.infrastructure.midi.sender import MidiError, open_sender
+    from synth_ai.infrastructure.midi.sender import MidiError
     from synth_ai.registry import CALIBRATION_DIRS
 
     cfg = _config(config)
@@ -476,6 +547,7 @@ def calibrate(
         feature=target,
         values=points,
         conditions=f"{conditions} / {auto_conditions}" if conditions else auto_conditions,
+        reference_note=note_name,
     )
     unit = UNITS[target]
     session_dir = (
@@ -483,65 +555,42 @@ def calibrate(
         / "calibration"
         / f"{info.parameter_id}__{target.value}-{datetime.now():%Y%m%d-%H%M%S}"
     )
+    out_dir = CALIBRATION_DIRS.get(
+        adapter.synth_id, Path("data") / f"{adapter.synth_id}_calibration"
+    )
+    path = out_dir / curve_filename(info.parameter_id, target)
+
     typer.echo(f"パラメータ: {info.label}（{info.source_ref or '出典なし'}）")
-    typer.echo(f"測る特徴: {LABELS[target]}（{unit}） / 値: {', '.join(f'{v:g}' for v in points)}")
-    typer.echo(f"条件: {plan.conditions}")
-    typer.echo("基準の音色を選び、このパラメータだけを変えてください。\n")
-
-    use_midi = not manual and cfg.midi.output_port is not None
-    try:
-        recorder = SoundDeviceRecorder(
-            cfg.capture.input_device, cfg.capture.sample_rate, cfg.capture.channels
-        )
-        sender_ctx = (
-            open_sender(cfg.midi.output_port, cfg.midi.channel)  # type: ignore[arg-type]
-            if use_midi
-            else nullcontext(None)
-        )
-        with sender_ctx as sender:
-
-            def ask_to_set(index: int, value: float) -> Step:
-                answer = (
-                    typer.prompt(
-                        f"[{index + 1}/{len(points)}] {info.label} を {value:g} にして Enter"
-                        "（s: スキップ / q: ここで終了）",
-                        default="",
-                        show_default=False,
-                    )
-                    .strip()
-                    .lower()
-                )
-                return {"s": Step.SKIP, "q": Step.QUIT}.get(answer, Step.GO)
-
-            def record(value: float, attempt: int) -> Path:
-                result = capture_note(recorder, sender, settings, prompt=typer.echo)
-                for w in result.warnings:
-                    typer.secho(f"  注意: {w}", fg=typer.colors.YELLOW)
-                return write_capture(session_dir / f"v{value:g}_try{attempt}.wav", result)
-
-            def confirm(m: Measurement) -> Verdict:
-                shown = (
-                    "測れませんでした" if m.feature_value is None else f"{m.feature_value:g} {unit}"
-                )
-                typer.echo(f"  → {LABELS[target]}: {shown}")
-                for issue in m.issues:
-                    typer.secho(f"  注意: {issue.message}", fg=typer.colors.YELLOW)
-                answer = (
-                    typer.prompt(
-                        "  Enter: 採用 / r: 録り直し / s: この値は使わない",
-                        default="",
-                        show_default=False,
-                    )
-                    .strip()
-                    .lower()
-                )
-                return {"r": Verdict.RETRY, "s": Verdict.SKIP}.get(answer, Verdict.ACCEPT)
-
-            session = run_session(
-                plan, ask_to_set, record, lambda p: analyze_file(p).analysis, confirm
-            )
-    except (CaptureError, MidiError, AudioLoadError) as exc:
-        raise _fail(exc) from exc
+    typer.echo(f"測る特徴: {LABELS[target]}（{unit}）")
+    measured_at = None
+    if from_recordings is not None:
+        recordings = latest_recordings(from_recordings)
+        if values:  # --values を指定したら、その値の録音だけを使う
+            recordings = {v: p for v, p in recordings.items() if v in points}
+        if not recordings:
+            raise _fail(ValueError(f"{from_recordings} に録音（v<値>_try<回>.wav）がありません"))
+        previous = load_json(CalibrationCurve, path) if path.is_file() else None
+        if previous is not None:
+            if not conditions:
+                plan = replace(plan, conditions=previous.conditions)
+            if note is None and previous.reference_note:
+                plan = replace(plan, reference_note=previous.reference_note)
+            if previous.measured_at:
+                measured_at = date.fromisoformat(previous.measured_at)
+        typer.echo(f"録音を解析し直します: {from_recordings}（{len(recordings)} 個）")
+        try:
+            session = rebuild_session(plan, recordings, lambda p: analyze_file(p).analysis)
+        except AudioLoadError as exc:
+            raise _fail(exc) from exc
+        session_dir = from_recordings
+    else:
+        typer.echo(f"値: {', '.join(f'{v:g}' for v in points)}")
+        typer.echo(f"条件: {plan.conditions}")
+        typer.echo("基準の音色を選び、このパラメータだけを変えてください。\n")
+        try:
+            session = _record_calibration(cfg, plan, settings, manual, session_dir)
+        except (CaptureError, MidiError, AudioLoadError) as exc:
+            raise _fail(exc) from exc
 
     typer.echo("\n値 → 特徴:")
     for m in session.points:
@@ -549,7 +598,7 @@ def calibrate(
     if session.skipped:
         typer.echo(f"  使わなかった値: {', '.join(f'{v:g}' for v in session.skipped)}")
     try:
-        curve = build_curve(session)
+        curve = build_curve(session, measured_at)
     except NotEnoughPointsError as exc:
         raise _fail(exc) from exc
     if not curve.is_monotonic:

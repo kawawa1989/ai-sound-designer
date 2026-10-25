@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from synth_ai.adapters.kronos2.al1 import choose_waveform
 from synth_ai.adapters.kronos2.parameters import ParameterKind, ParameterTable
+from synth_ai.adapters.kronos2.recipe import pitch_shift
 from synth_ai.adapters.kronos2.roles import ROLE_LABELS, Role
 from synth_ai.core.calibration.models import CalibrationSet
 from synth_ai.core.comparison.models import AdjustmentSuggestion, Difference
@@ -67,7 +68,8 @@ def suggest_adjustments(
         if role in used:
             continue
         used.add(role)
-        out.append(_numeric_suggestion(feature, role, sign, d, recipe, table, calibrations))
+        f0 = spec.pitch.f0_hz if spec.pitch else None
+        out.append(_numeric_suggestion(feature, role, sign, d, recipe, table, calibrations, f0))
     return tuple(out)
 
 
@@ -79,6 +81,7 @@ def _numeric_suggestion(
     recipe: PatchRecipe | None,
     table: ParameterTable | None,
     calibrations: CalibrationSet,
+    f0_hz: float | None = None,
 ) -> AdjustmentSuggestion:
     param = table.by_role(role) if table else None
     curve = calibrations.get(param.id, feature.value) if param else None
@@ -92,14 +95,18 @@ def _numeric_suggestion(
     verb = "上げる" if action is StepAction.INCREASE else "下げる"
 
     value: float | int | None = None
+    shift_note = ""
     if curve is not None and param is not None and param.kind is not ParameterKind.CHOICE:
         target, measured = curve.inverse(d.reference), curve.inverse(d.recording)
         current = _current_value(recipe, param.id)
         if target is not None and measured is not None and current is not None:
             # 曲線と実際の録音のずれを補うため、現在値から差分だけ動かす
+            # （音程による曲線のずれは、差を取ると打ち消し合う）
             value = param.clamp(current + target - measured)
         elif target is not None:
-            value = param.clamp(target)
+            shift = pitch_shift(param, curve, f0_hz)
+            value = param.clamp(target + (shift.steps if shift else 0.0))
+            shift_note = shift.describe() if shift else ""
 
     name = f"{param.name}（{param.page}）" if param else ROLE_LABELS[role]
     message = f"{name}を{verb}" + (f": {value} にする" if value is not None else "")
@@ -117,7 +124,7 @@ def _numeric_suggestion(
         page=param.page if param else None,
         action=action,
         value=value,
-        reason=f"{d.message}。{basis}",
+        reason=f"{d.message}。{basis}{shift_note}",
     )
 
 

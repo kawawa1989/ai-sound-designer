@@ -56,12 +56,14 @@ def al1_intents(spec: SoundSpec) -> list[Intent]:
     )
 
     darkening = spec.timbre.brightness_decay is not None
-    cutoff_target = target_of(spec, Feature.BRIGHTNESS_END if darkening else Feature.BRIGHTNESS)
+    # カットオフは持続部（終盤）の明るさで合わせる。キャリブレーションも同じ特徴で測る。
+    # 明るさが変わらない音では、持続部の明るさ ≈ 音全体の明るさ
+    cutoff_target = target_of(spec, Feature.BRIGHTNESS_END) or target_of(spec, Feature.BRIGHTNESS)
     if cutoff_target is not None:
         reason = (
             "鳴り終わりに近い部分の明るさに合わせる（発音直後の明るさはフィルター EG で足す）"
             if darkening
-            else "音全体の明るさに合わせる"
+            else "持続部の明るさに合わせる（明るさは時間で変わらない）"
         )
         intents.append(Intent(Role.FILTER_CUTOFF, StepAction.SET, reason, target=cutoff_target))
 

@@ -41,6 +41,8 @@ class ParameterDef(BaseModel):
     step: float | None = None
     default: float | str | None = None  # 初期化した Program での値（分かる場合）
     unit: str | None = None
+    # 値 1 段が周波数で何分の 1 オクターブか（カットオフなど）。音程の違う参照音に合わせる補正に使う
+    steps_per_octave: float | None = Field(default=None, gt=0)
     choices: tuple[Choice, ...] = ()
     roles: tuple[Role, ...] = ()
     source_ref: str  # 公式資料の該当箇所（例: "Parameter Guide p.123"）

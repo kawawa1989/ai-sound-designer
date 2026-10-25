@@ -136,6 +136,7 @@
 - **Phase 4（2〜3週）**: 定常区間から1周期波形/ループ素材の再合成、ループ点・クロスフェード・DC除去。HD-1への取り込みは手動手順書。Capabilityで `user_sample_import: supported` の機種にだけ提案。
 - **Phase 5（3〜4週）**: PC3A8資料整理 → `pc3a8/` Adapter → 同じ契約テストに追加 → キャリブレーションを同じ仕組みで実施 → 1音で一周。Coreに差分が出ないことを確認。
 - **Phase 6（調査次第）**: まずKORG MIDI Implementationを読み、**読み取り（ダンプ要求）だけ**でテストProgramの状態を取得できるか確認。書き込みは1パラメータ・テストProgram限定・事前ダンプ保存・明示確認つきで検証。成功した場合はSprint 3-3のキャリブレーションを全自動化でき、効果が大きい。
+  - 2026-10-25: 実施を決定。GitHub Issue #1「calibrate の完全自動化」と Sub-Issue #2〜#11 で進める。使ってよい SysEx と書き込みの条件は `docs/safety.md`「SysEx の扱い」（#3）。
 
 ---
 

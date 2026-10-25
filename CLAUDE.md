@@ -35,9 +35,13 @@ Python は 3.12 固定（uv 管理）。システムの python3 は使わない�
 
 ## 禁止事項（実機の安全）
 
-詳細は `docs/safety.md`。MIDI 送信は `infrastructure/midi/sender.py` で Note On/Off と All Notes Off に制限している。
-実機に音を出すコマンド（midi-probe, capture）は、ユーザーの指示なしに実行しない。
+詳細は `docs/safety.md`。ノートの送信は `infrastructure/midi/sender.py` で Note On/Off と All Notes Off に制限している。
+実機に音を出すコマンド（midi-probe, capture, calibrate）と、実機の状態を読み書きするコマンド
+（SysEx を使うもの）は、ユーザーの指示なしに実行しない。
 
 - KRONOS の OS 更新（System 3.1.3 固定）。
-- SysEx 書き込み、Global 設定の変更、既存 Program の上書き。テスト用 Bank/Program 以外を触らない。
+- `docs/safety.md` の「SysEx の扱い」で「使う」としたもの以外の SysEx を送ること。
+  書き込み（43 Parameter Change）は同ページの「書き込みの条件」をすべて満たすときだけ。
+- ツールから Global 設定を変えること、本体に保存（Write）すること、既存 Program を上書きすること。
+  テスト用 Bank/Program 以外を触らない。
 - 公式資料で確認していない KRONOS / PC3A8 のパラメータ名・ページ名・値を生成しない。不明なら「要確認」とする。

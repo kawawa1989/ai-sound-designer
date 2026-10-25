@@ -1,0 +1,40 @@
+{
+  "schema_version": "1.0",
+  "synth_id": "kronos2",
+  "parameter_id": "al1.amp_eg.time.attack",
+  "feature": "attack_time",
+  "unit": "ms",
+  "conditions": "U-CC000 AL-1 BASIC SOUND / C4 / velocity 100 / hold 3s / tail 2s",
+  "measured_at": "2026-10-25",
+  "reference_note": "C4",
+  "points": [
+    {
+      "parameter_value": 10.0,
+      "feature_value": 9.984
+    },
+    {
+      "parameter_value": 20.0,
+      "feature_value": 29.714
+    },
+    {
+      "parameter_value": 30.0,
+      "feature_value": 70.953
+    },
+    {
+      "parameter_value": 40.0,
+      "feature_value": 154.841
+    },
+    {
+      "parameter_value": 50.0,
+      "feature_value": 321.245
+    },
+    {
+      "parameter_value": 60.0,
+      "feature_value": 658.14
+    },
+    {
+      "parameter_value": 70.0,
+      "feature_value": 1320.004
+    }
+  ]
+}

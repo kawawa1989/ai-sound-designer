@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "synth_id": "kronos2",
+  "parameter_id": "al1.amp_eg.time.decay",
+  "feature": "decay_time",
+  "unit": "ms",
+  "conditions": "U-CC000 + Amp EG Break 30 / Sustain 30（ピークから約 10.4 dB 下がる） / C4 / velocity 100 / hold 3s / tail 2s",
+  "measured_at": "2026-10-25",
+  "reference_note": "C4",
+  "points": [
+    {
+      "parameter_value": 0.0,
+      "feature_value": 0.0
+    },
+    {
+      "parameter_value": 10.0,
+      "feature_value": 6.637
+    },
+    {
+      "parameter_value": 20.0,
+      "feature_value": 27.076
+    },
+    {
+      "parameter_value": 30.0,
+      "feature_value": 63.806
+    },
+    {
+      "parameter_value": 40.0,
+      "feature_value": 139.538
+    },
+    {
+      "parameter_value": 50.0,
+      "feature_value": 293.697
+    },
+    {
+      "parameter_value": 60.0,
+      "feature_value": 600.789
+    },
+    {
+      "parameter_value": 70.0,
+      "feature_value": 1202.641
+    }
+  ]
+}

@@ -101,7 +101,8 @@ class EnvelopeFeatures(FrozenModel):
     """RMS 包絡から求めた発音の時間構造。
 
     attack_ms: ピーク振幅の 10%→90% の立ち上がり時間
-    decay_ms: ピークからサステイン到達まで（サステインなしなら -20 dB 到達まで）
+    decay_ms: ピークからサステインまでの dB 差の 90% 下がるまで（差が 1 dB 未満なら 0）。
+              サステインなしなら -20 dB 到達まで
     sustain_level_db: サステイン区間の中央値（ピーク基準、サステインなしなら None）
     release_ms: サステイン終了から 20 dB 減衰するまで（未到達なら None）
     decay_rate_db_per_s: ピーク後の減衰の傾き（負の値ほど速く減衰）

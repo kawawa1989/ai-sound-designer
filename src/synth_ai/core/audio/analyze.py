@@ -21,7 +21,8 @@ from synth_ai.core.sound_spec.models import (
 )
 
 # 0.2.0: スペクトル重心・ロールオフにノイズゲート / 0.2.1: 包絡ピークの絶対レベルを記録
-ANALYZER_VERSION = "0.2.1"
+# 0.2.2: ディケイを「ピーク→サステインの dB 差の 90% 下がるまで」に変更
+ANALYZER_VERSION = "0.2.2"
 DECIMALS = 4
 PITCH_CONFIDENCE_MIN = 0.5
 HARMONIC_RATIO_MIN = 0.7

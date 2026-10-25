@@ -30,6 +30,8 @@ SPECTRAL_GATE_DB = 60.0  # 重心の計算で無視する、フレーム内の�
 PLATEAU_SLOPE_DB_S = 4.0  # これより緩い傾きを「サステイン」とみなす
 PLATEAU_MIN_S = 0.15
 RELEASE_DROP_DB = 20.0
+DECAY_FRACTION = 0.9  # ディケイ: ピークからサステインまでの dB 差のこの割合だけ下がった時点で終わり
+DECAY_MIN_DROP_DB = 1.0  # これより下がらない音は「ディケイなし」（0 ms）
 MAX_PARTIALS = 40
 N_TRACKED_HARMONICS = 8
 
@@ -139,6 +141,21 @@ def _longest_run(mask: np.ndarray) -> tuple[int, int] | None:
     return best
 
 
+def _decay_to_sustain_ms(
+    times: np.ndarray, db: np.ndarray, peak_i: int, sustain_level: float
+) -> float | None:
+    """ピーク（0 dB）からサステインまでの dB 差の 90% 下がるまでの時間。
+
+    「下がり方が緩やかになった時点」で区切ると、下がる幅が小さい音や曲線的に下がる音で
+    途中で終わったと判定されてしまう。dB 差の割合で区切ると幅によらず安定する。
+    """
+    drop = -sustain_level
+    if drop < DECAY_MIN_DROP_DB:
+        return 0.0
+    end = _first_drop(times, db, -DECAY_FRACTION * drop, peak_i)
+    return None if end is None else max(end - float(times[peak_i]), 0.0) * 1000
+
+
 def envelope_features(env: Envelope) -> EnvelopeFeatures:
     times, db = env.times, env.db
     floor = noise_floor_db(env)
@@ -172,7 +189,7 @@ def envelope_features(env: Envelope) -> EnvelopeFeatures:
         while last + 1 < len(db) and db[last + 1] >= sustain_level - 0.5:
             last += 1
         release_start = float(times[last])
-        decay_ms = (sustain_start - peak_s) * 1000
+        decay_ms = _decay_to_sustain_ms(times, db, peak_i, sustain_level)
         end = _first_drop(times, db, sustain_level - RELEASE_DROP_DB, last)
         release_ms = None if end is None else (end - release_start) * 1000
         rate_end = sustain_start

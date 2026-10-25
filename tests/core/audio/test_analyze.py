@@ -182,3 +182,22 @@ def test_quiet_dark_sound_is_not_brightened_by_noise_floor(analyze_signal: Analy
     quiet_s = analyze_signal("dark_quiet", quiet).analysis.spectral
     assert loud_s is not None and quiet_s is not None
     assert quiet_s.centroid_hz_end == pytest.approx(loud_s.centroid_hz_end, rel=0.15)
+
+
+@pytest.mark.parametrize("decay_s", [0.25, 1.0])
+def test_shallow_curved_decay(analyze_signal: Analyze, decay_s: float) -> None:
+    """ピークから 2.4 dB しか下がらない曲線的なディケイでも、長さに比例して測れる。
+
+    実機（Attack 99 → Sustain 75）で、ディケイを長くすると途中で終わったと判定されていた。
+    """
+    sr = 48_000
+    t = np.arange(int(3.5 * sr)) / sr
+    tau = decay_s / 3
+    level_db = np.where(t < 3.0, -2.4 * (1 - np.exp(-t / tau)), -2.4 - 400 * (t - 3.0))
+    env = 10 ** (level_db / 20) * np.minimum(t / 0.002, 1.0)
+    saw = ts.additive(261.63, len(t) / sr, lambda k, tt: np.full_like(tt, 1.0 / k))
+    result = analyze_signal(f"shallow_decay_{decay_s}", ts.normalize(saw * env))
+    e = result.analysis.envelope
+    assert e is not None and e.sustained
+    # dB 差の 90% に達するのは tau·ln(10) ≈ 0.77·decay_s 後
+    assert e.decay_ms == pytest.approx(tau * np.log(10) * 1000, rel=0.15)

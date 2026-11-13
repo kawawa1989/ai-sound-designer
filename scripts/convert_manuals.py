@@ -4,6 +4,11 @@ PDF を目次の章ごとに Markdown へ分割し、各ページ先頭に PDF �
 本文ページ番号（マニュアル内の「→ p.xxx」参照と同じ番号）を入れる。
 `<manual_dir>/INDEX.md` に章 → ファイル → ページの対応表を書き出す。
 
+本文ページ番号は 2 形式に対応する。
+- 通し番号（KRONOS など）: 目次から章を取り、PDF ページとの差（オフセット）で対応づける
+- 「章-ページ」（例: 6-45。Kurzweil PC3A など）: ページ上下の余白にある番号を読み、
+  章番号（付録は A, B…）が変わるところで分割する
+
 PDF・変換テキストは再配布しないため .gitignore 対象。このスクリプトと INDEX.md だけを管理する。
 pdftotext（poppler）が必要: brew install poppler
 
@@ -30,6 +35,12 @@ NO_JOIN_END = tuple("。．.:：!！?？）)」』】>")
 CJK = re.compile(r"[　-ヿ㐀-鿿＀-￯]")
 SMALL_PDF_PAGES = 12  # これ以下のページ数なら章分割しない
 FALLBACK_CHUNK = 40  # 目次が取れないときのページ数単位の分割
+# 「章-ページ」形式の本文ページ番号（6-45, A-3）
+SECTIONED_LABEL = re.compile(r"^(?P<section>\d+|[A-Z])-(?P<page>\d+)$")
+LABEL_MARGIN = 0.08  # ページ番号を探す上下の余白（ページの高さに対する割合）
+# 目次の「Chapter 6 Program Mode」「Appendix Specifications」
+TOC_CHAPTER = re.compile(r"^Chapter\s+(?P<number>\d+)\s+(?P<title>.+?)[\s.\d]*$")
+TOC_APPENDIX = re.compile(r"^Appendix\s+(?P<title>.+?)[\s.\d]*$")
 
 
 @dataclass(frozen=True)
@@ -149,7 +160,110 @@ def parse_toc(pdf: Path, toc_pages: range) -> list[TocEntry]:
     return entries
 
 
-def plan_chunks(pages: list[str], pdf: Path) -> tuple[list[Chunk], int | None]:
+def margin_labels(pdf: Path) -> list[str | None]:
+    """各ページの上下の余白にある「章-ページ」形式の番号（無ければ None）。"""
+    xml = run_pdftotext(pdf, "-bbox")
+    # 本文中の制御文字（XML では使えない）を取り除く
+    xml = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", xml)
+    root = ET.fromstring(re.sub(r"<!DOCTYPE[^>]*>", "", xml))
+    labels: list[str | None] = []
+    for page in root.iter(f"{XHTML}page"):
+        height = float(page.get("height", 0))
+        label = None
+        for word in page.iter(f"{XHTML}word"):
+            text = (word.text or "").strip()
+            top, bottom = float(word.get("yMin", 0)), float(word.get("yMax", 0))
+            in_margin = bottom > height * (1 - LABEL_MARGIN) or top < height * LABEL_MARGIN
+            if in_margin and SECTIONED_LABEL.match(text):
+                label = text
+                break
+        labels.append(label)
+    return consistent_labels(labels)
+
+
+def consistent_labels(labels: list[str | None]) -> list[str | None]:
+    """前後のページと続き番号になっている番号だけを残す。
+
+    目次ページの「6-20」のような参照ページ番号を、そのページの番号と取り違えないため。
+    """
+
+    def parts(label: str | None) -> tuple[str, int] | None:
+        m = SECTIONED_LABEL.match(label) if label else None
+        return (m["section"], int(m["page"])) if m else None
+
+    parsed = [parts(label) for label in labels]
+    kept: list[str | None] = []
+    for i, current in enumerate(parsed):
+        ok = False
+        if current is not None:
+            section, page = current
+            prev = parsed[i - 1] if i > 0 else None
+            nxt = parsed[i + 1] if i + 1 < len(parsed) else None
+            ok = prev == (section, page - 1) or nxt == (section, page + 1)
+            # 1 ページだけの章（付録など）は、本文が始まった後の「X-1」なら認める
+            ok = ok or (page == 1 and any(k is not None for k in kept))
+        kept.append(labels[i] if ok else None)
+    return kept
+
+
+def sectioned_titles(pages: list[str]) -> dict[str, str]:
+    """目次から章番号（付録は出てきた順に A, B…）→ 見出し。"""
+    titles: dict[str, str] = {}
+    appendix = 0
+    for text in pages[:30]:
+        for line in text.splitlines():
+            line = re.sub(r"\s+", " ", line).strip()
+            if m := TOC_CHAPTER.match(line):
+                titles.setdefault(m["number"], f"Chapter {m['number']} {m['title']}")
+            elif m := TOC_APPENDIX.match(line):
+                letter = chr(ord("A") + appendix)
+                appendix += 1
+                titles.setdefault(letter, f"Appendix {letter} {m['title']}")
+    return titles
+
+
+def first_line(text: str) -> str:
+    return next((line.strip() for line in text.splitlines() if line.strip()), "")
+
+
+def plan_sectioned_chunks(pages: list[str], labels: list[str | None]) -> list[Chunk]:
+    """本文ページ番号の章部分が変わるところで分割する。番号の無いページは前のページの章に含める。"""
+    titles = sectioned_titles(pages)
+    chunks: list[Chunk] = []
+    current: str | None = None
+    first = 1
+    for i, label in enumerate(labels, start=1):
+        m = SECTIONED_LABEL.match(label) if label else None
+        section = m["section"] if m else current
+        # 巻末の索引にはページ番号が無いので、見出しで区切る
+        if not m and current is not None and first_line(pages[i - 1]) == "Index":
+            section = "Index"
+        if section != current:
+            if i > first:
+                title = titles.get(current, current) if current else "前付け・目次"
+                chunks.append(Chunk(title or "", first, i - 1, ()))
+            current, first = section, i
+    title = titles.get(current, current) if current else "前付け・目次"
+    chunks.append(Chunk(title or "", first, len(labels), ()))
+    return chunks
+
+
+def plan_chunks(pages: list[str], pdf: Path) -> tuple[list[Chunk], list[str | None]]:
+    """章ごとの分割と、各ページの本文ページ番号（不明なら None）を返す。"""
+    total = len(pages)
+    if total > SMALL_PDF_PAGES:
+        labels = margin_labels(pdf)
+        if len(labels) == total and sum(label is not None for label in labels) >= total / 2:
+            return plan_sectioned_chunks(pages, labels), labels
+    chunks, offset = plan_numbered_chunks(pages, pdf)
+    numbered: list[str | None] = [
+        str(p - offset) if offset is not None and p - offset >= 1 else None
+        for p in range(1, total + 1)
+    ]
+    return chunks, numbered
+
+
+def plan_numbered_chunks(pages: list[str], pdf: Path) -> tuple[list[Chunk], int | None]:
     total = len(pages)
     offset = page_offset(pages)
     if total <= SMALL_PDF_PAGES:
@@ -217,22 +331,47 @@ def slugify(title: str) -> str:
     return slug.strip("_.")[:60] or "chunk"
 
 
-def printed_label(pdf_page: int, offset: int | None) -> str:
-    if offset is None or pdf_page - offset < 1:
+def printed_label(pdf_page: int, labels: list[str | None]) -> str:
+    label = labels[pdf_page - 1]
+    return f" 本文p.{label}" if label else ""
+
+
+def label_note(labels: list[str | None]) -> str | None:
+    """INDEX に書く、本文ページ番号の読み方。"""
+    for p, label in enumerate(labels, start=1):
+        if label is None:
+            continue
+        if label.isdigit():
+            return f"- 本文ページ番号 = PDFページ番号 - {p - int(label)}"
+        return (
+            "- 本文ページ番号は「章-ページ」（例: 6-45、付録は A-3）。"
+            "各ページの余白の番号を読んだもの"
+        )
+    return None
+
+
+def printed_range(chunk: Chunk, labels: list[str | None]) -> str:
+    inside = [label for label in labels[chunk.first - 1 : chunk.last] if label]
+    if not inside:
         return ""
-    return f" 本文p.{pdf_page - offset}"
+    if inside[0].isdigit():
+        # 通し番号は先頭ページに番号が無くても前後から決まる
+        first = labels[chunk.first - 1]
+        last = labels[chunk.last - 1]
+        return f"{first}–{last}" if first and last else ""
+    return f"{inside[0]}–{inside[-1]}"
 
 
 def convert_pdf(pdf: Path, out_root: Path, rel_root: Path) -> list[str]:
     pages = extract_pages(pdf)
-    chunks, offset = plan_chunks(pages, pdf)
+    chunks, labels = plan_chunks(pages, pdf)
     doc_dir = out_root / slugify(pdf.stem)
     doc_dir.mkdir(parents=True, exist_ok=True)
 
     index = [f"### {pdf.stem}", ""]
     index.append(f"- 元PDF: `{pdf.relative_to(rel_root)}`（{len(pages)}ページ）")
-    if offset is not None:
-        index.append(f"- 本文ページ番号 = PDFページ番号 - {offset}")
+    if note := label_note(labels):
+        index.append(note)
     index += ["", "| ファイル | 章 | PDFページ | 本文ページ |", "|---|---|---|---|"]
 
     sections_md: list[str] = []
@@ -249,14 +388,12 @@ def convert_pdf(pdf: Path, out_root: Path, rel_root: Path) -> list[str]:
             "",
         ]
         for p in range(chunk.first, chunk.last + 1):
-            body.append(f"<!-- page: PDF p.{p}{printed_label(p, offset)} -->")
+            body.append(f"<!-- page: PDF p.{p}{printed_label(p, labels)} -->")
             body.append(join_wrapped_lines(pages[p - 1]))
             body.append("")
         path.write_text("\n".join(body), encoding="utf-8")
 
-        printed = ""
-        if offset is not None and chunk.first - offset >= 1:
-            printed = f"{chunk.first - offset}–{chunk.last - offset}"
+        printed = printed_range(chunk, labels)
         rel = path.relative_to(rel_root)
         index.append(
             f"| [{name}]({rel}) | {chunk.title} | {chunk.first}–{chunk.last} | {printed} |"

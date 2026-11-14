@@ -141,15 +141,24 @@ def compare(
 @trial_app.command("list")
 def trial_list(
     run_dir: Annotated[Path, typer.Argument(help="analyze の出力ディレクトリ")],
+    synth: Annotated[
+        str | None, typer.Option("--synth", "-s", help="この機種の試行だけを表示する")
+    ] = None,
 ) -> None:
-    """試行の一覧（距離、主な違い、評価）を表示する。"""
+    """試行の一覧（機種ごと。距離、主な違い、評価）を表示する。"""
     from synth_ai.core.history.store import rebuild_history
 
     history = rebuild_history(run_dir)
-    if not history.trials:
+    trials = [t for t in history.trials if synth is None or t.synth_id == synth]
+    if not trials:
         typer.echo("試行はまだありません（synth-ai compare で追加）")
         return
-    for t in history.trials:
+    current: object = object()
+    for t in trials:
+        if t.synth_id != current:
+            current = t.synth_id
+            spec = f"（SoundSpec: {t.sound_spec_id}）" if t.sound_spec_id else ""
+            typer.echo(f"## {t.synth_id or '機種の指定なし'}{spec}")
         note = t.note
         rating = (
             f"近さ {note.closeness or '-'} / 好み {note.preference or '-'}" if note else "未評価"
@@ -167,7 +176,10 @@ def trial_list(
 @trial_app.command("note")
 def trial_note(
     run_dir: Annotated[Path, typer.Argument(help="analyze の出力ディレクトリ")],
-    trial: Annotated[int, typer.Argument(help="試行番号")],
+    trial: Annotated[int, typer.Argument(help="試行番号（機種ごとの番号）")],
+    synth: Annotated[
+        str | None, typer.Option("--synth", "-s", help="試行の機種（compare と同じもの）")
+    ] = "kronos2",
     closeness: Annotated[
         int | None, typer.Option(min=1, max=5, help="目標への近さ（1〜5）")
     ] = None,
@@ -183,6 +195,7 @@ def trial_note(
     try:
         note = save_note(
             run_dir,
+            synth,
             trial,
             closeness=closeness,
             preference=preference,

@@ -217,3 +217,15 @@ def test_project_calibration_values() -> None:
     }
     assert min(measured["kva.dspctl.lp_frq"].calibration_values) > 0
     assert 25088 in measured["kva.dspctl.lp_frq"].calibration_values  # 基準音の値
+
+
+def test_cutoff_snaps_to_semitones() -> None:
+    """LP Frq は平均律の半音ごと（C 0 16 Hz、F#10 23680 Hz、G 10 25088 Hz を実機で確認）。"""
+    loaded = load_table(ROOT / "data" / "pc3a8_parameters", "KVA")
+    assert loaded is not None
+    cutoff = loaded.by_id("kva.dspctl.lp_frq")
+    assert cutoff is not None and cutoff.is_semitone_hz
+    assert cutoff.clamp(88.15) == 87  # F2（画面は F 2）
+    assert cutoff.clamp(24000) == 23680  # F#10
+    assert cutoff.clamp(99999) == 25088 and cutoff.clamp(1) == 16
+    assert all(cutoff.clamp(v) == v for v in cutoff.calibration_values)

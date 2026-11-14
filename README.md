@@ -3,7 +3,7 @@
 [![CI](https://github.com/kawawa1989/ai-sound-designer/actions/workflows/ci.yml/badge.svg)](https://github.com/kawawa1989/ai-sound-designer/actions/workflows/ci.yml)
 
 「こんな音を作りたい」を、使用するシンセで実現するための手順と改善サイクルに変えるツール。
-初期対象は KORG KRONOS 2（System 3.1.3）。将来 Kurzweil PC3A8 に対応予定。
+対応機種は Kurzweil PC3A8（V.A.S.T. / KVA）と KORG KRONOS 2（System 3.1.3）。2026-11 以降は PC3A8 を中心に進めている。
 
 ## セットアップ
 
@@ -12,6 +12,19 @@ brew install uv
 uv sync
 cp config/local.example.yaml config/local.yaml
 ```
+
+## 実機の準備（PC3A8）
+
+最初に `docs/safety.md` の「PC3A8」と `docs/pc3a8_setup.md`（接続・録音）を確認してください。
+本体の操作手順は `docs/manuals/pc3a8/` にあります（値の読み取り、キャリブレーション、レシピどおりの設定と比較）。
+
+```bash
+uv run synth-ai devices -s pc3a8                              # MIDI 出力ポートと録音デバイスを確認
+uv run synth-ai recipe runs/001/ -s pc3a8                     # PC3A8 用レシピ（基準音 1025 から編集する手順書）
+uv run synth-ai capture -s pc3a8 --run runs/001/              # 参照音と同じ音程で録音し、そのまま比較
+```
+
+1 周の記録は `docs/pc3a8_trial_report.md`。
 
 ## 実機の準備（KRONOS 2）
 
@@ -56,9 +69,9 @@ KRONOS の具体的なパラメータ手順には、公式資料から作るパ�
 
 `compare` は録音を参照音にそろえ（発音開始・音量、音程の差は報告のみ）、特徴量・区間ごとの音量・
 区間 × 周波数帯の音色・倍音の差を出して、次の調整案を最大 3 件示します。結果は
-`runs/<id>/trials/<NNN>/`（録音のコピー、comparison.md、difference.png など）に保存され、
-`history.json` に一覧がまとまります。2 回目以降は前回からの改善・悪化も表示されます。
-目標への近さと好みは `trial note` で別々に記録します。
+`runs/<id>/trials/<機種>/<NNN>/`（録音のコピー、comparison.md、difference.png など）に機種ごとの番号で保存され、
+`history.json` に一覧がまとまります（同じ参照音・SoundSpec に紐づく）。2 回目以降は、同じ機種の前回からの改善・悪化も
+表示されます。目標への近さと好みは `trial note`（`-s` で機種を指定）で別々に記録します。
 
 入力は単音・明確なピッチの WAV を想定しています。和音、背景ノイズ、途中で切れた音などは
 `analysis.json` の `issues` とコンソールの「注意」に表示されます。

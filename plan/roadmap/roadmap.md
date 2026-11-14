@@ -381,6 +381,13 @@ Capabilities例（実機動作保証ではなく設計例）:
 
 **完了条件**: 既存SoundSpecからPC3A8固有の適切なレシピを生成でき、実機で1音を制作・録音して共通比較処理を再利用できる
 
+**状況（2026-11-14）**: 完了。#15（#16〜#23）で実施した。
+
+- Adapter・パラメータ表・キャリブレーション曲線: `src/synth_ai/adapters/pc3a8/`、`data/pc3a8_parameters/`、`data/pc3a8_calibration/`
+- 1 周の記録（比較レポート）: `docs/pc3a8_trial_report.md`。手順書は `docs/manuals/pc3a8/`
+- 作業 5 の「KRONOS と並べての比較」は行わない（以降は PC3A8 を中心に進める。KRONOS の実装は残す）
+- 次: MIDI CC によるキャリブレーションの自動化（#34）
+
 ### Phase 6 — MIDI / SysExによる制御の段階的自動化（優先度 P2 / 調査依存）
 
 **作業**

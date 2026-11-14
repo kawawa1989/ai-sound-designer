@@ -14,6 +14,7 @@ KRONOS の表（adapters/kronos2/parameters.py）との違い:
 
 from __future__ import annotations
 
+import math
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal
@@ -154,6 +155,11 @@ class ParameterDef(BaseModel):
         if self.min is None or self.max is None:
             raise ValueError(f"{self.id}: range is unknown")
         value = min(max(value, self.min), self.max)
+        if self.is_semitone_hz and value > 0:
+            # 周波数は平均律の半音ごと（A4 = 440 Hz）。本体の表示は Hz の整数
+            steps = self.steps_per_octave or 12.0
+            snapped = 440.0 * 2.0 ** (round(steps * math.log2(value / 440.0)) / steps)
+            return int(round(min(max(snapped, self.min), self.max)))
         grid = self.grid()
         if grid and grid[0] <= value <= grid[-1]:
             # 確かめた範囲では、本体で選べるいちばん近い値にする
@@ -171,6 +177,11 @@ class ParameterDef(BaseModel):
     @property
     def location(self) -> str:
         return self.page if self.section is None else f"{self.page} › {self.section}"
+
+    @property
+    def is_semitone_hz(self) -> bool:
+        """Hz の値で、1 段が半音（LP Frq など。実機で確認、2026-11-14）。"""
+        return self.unit == "Hz" and self.steps_per_octave == 12
 
     def shift_octaves(self, value: float, octaves: float) -> float:
         """Hz の値は 1 オクターブで 2 倍。それ以外は steps_per_octave 段ずつ変わる。"""

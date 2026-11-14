@@ -10,21 +10,27 @@ PC3A8 のパラメータを読み書きする SysEx の形式は公開されて�
 
 from __future__ import annotations
 
+import math
+from collections.abc import Callable
 from pathlib import Path
 
 from synth_ai.adapters.base import Capabilities, CapabilityStatus, ParameterInfo
 from synth_ai.adapters.pc3a8.parameters import Layout, ParameterDef, ParameterTable, load_table
-from synth_ai.core.calibration.models import CalibrationSet
+from synth_ai.core.audio.notes import hz_to_note
+from synth_ai.core.calibration.models import CalibrationCurve, CalibrationSet
 from synth_ai.core.comparison.models import AdjustmentSuggestion, Difference
 from synth_ai.core.planning.adjust import suggest_adjustments
 from synth_ai.core.planning.render import (
     describe_intent,
     describe_target,
     limitation_sections,
+    pitch_shift,
     render_steps,
 )
 from synth_ai.core.planning.roles import CALIBRATION_FEATURES, Role
 from synth_ai.core.planning.subtractive import NOISY, subtractive_intents
+from synth_ai.core.sound_spec.derive import target_of
+from synth_ai.core.sound_spec.features import Feature
 from synth_ai.core.sound_spec.models import (
     Level,
     PatchRecipe,
@@ -44,10 +50,52 @@ PAGE_ORDER = ("KEYMAP", "ALG", "DSPCTL", "DSPMOD", "ENV2", "AMPENV", "COMMON")
 TIME_UNITS = {("ms", "s"): 0.001, ("s", "s"): 1.0}
 
 
-def _initial_value(param: ParameterDef, target: QuantTarget) -> float | None:
-    """キャリブレーション曲線がないときの初期値。単位がそろう時間の項目だけ。"""
+def _time_value(param: ParameterDef, target: QuantTarget) -> float | None:
+    """単位がそろう時間の項目は、目標の時間をそのまま初期値にする。"""
     factor = TIME_UNITS.get((target.unit, param.unit or ""))
     return target.value * factor if factor is not None else None
+
+
+def _cutoff_for(
+    cutoff: ParameterDef, curve: CalibrationCurve, brightness: float, f0_hz: float | None
+) -> float | None:
+    """LP Frq の曲線から、この明るさ（×f0）になるカットオフ（Hz）。参照音の音程でずらす。"""
+    value = curve.inverse(brightness)
+    if value is None:
+        return None
+    shift = pitch_shift(cutoff, curve, f0_hz)
+    return cutoff.shift_octaves(value, shift.octaves) if shift else value
+
+
+def _initial_value_fn(
+    spec: SoundSpec, table: ParameterTable | None, calibrations: CalibrationSet
+) -> Callable[[ParameterDef, QuantTarget], float | None]:
+    """曲線がない項目の初期値を決める関数。
+
+    - 時間の項目: 目標の時間（ms → 秒）
+    - DSPMOD の Depth（ENV2 が LP Frq を動かす量、ct）: LP Frq の曲線で、発音直後と終盤の
+      明るさに当たるカットオフを求め、その差をセントにする（ENV2 は発音直後 100%、終盤 0%）
+    """
+    f0 = spec.pitch.f0_hz if spec.pitch else None
+    cutoff = table.by_role(Role.FILTER_CUTOFF) if table else None
+    curve = None
+    if cutoff is not None:
+        curve = calibrations.get(cutoff.id, Feature.BRIGHTNESS_END.value)
+
+    def initial(param: ParameterDef, target: QuantTarget) -> float | None:
+        if Role.FILTER_EG_INTENSITY.value in param.roles and param.unit == "ct":
+            start = target_of(spec, Feature.BRIGHTNESS_START)
+            end = target_of(spec, Feature.BRIGHTNESS_END)
+            if cutoff is None or curve is None or start is None or end is None:
+                return None
+            hz_start = _cutoff_for(cutoff, curve, start.value, f0)
+            hz_end = _cutoff_for(cutoff, curve, end.value, f0)
+            if not hz_start or not hz_end:
+                return None
+            return 1200 * math.log2(cutoff.clamp(hz_start) / cutoff.clamp(hz_end))
+        return _time_value(param, target)
+
+    return initial
 
 
 def _page_rank(step: RecipeStep) -> int:
@@ -90,6 +138,8 @@ def _with_unit(value: str | float | int, param: ParameterDef | None) -> str:
     if param is None or isinstance(value, str):
         return str(value)
     text = f"{value:g} {param.unit}" if param.unit else f"{value:g}"
+    if param.is_semitone_hz and value > 0:
+        return f"{text}（{hz_to_note(float(value))[0]}）"  # 画面は音名と Hz
     if not param.step and not param.grid() and value not in (0, param.min, param.max):
         # 刻みを確かめていない項目は、本体で選べる値に丸められない（端と 0 は選べる）
         text += "（本体で選べるいちばん近い値）"
@@ -173,7 +223,7 @@ class Pc3a8Adapter:
             table,
             self._calibrations(),
             spec.pitch.f0_hz if spec.pitch else None,
-            initial_value=_initial_value,
+            initial_value=_initial_value_fn(spec, table, self._calibrations()),
         )
         ordered = sorted(rendered.steps, key=_page_rank)
         steps = tuple(s.model_copy(update={"order": i}) for i, s in enumerate(ordered, 1))

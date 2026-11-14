@@ -36,6 +36,15 @@ def validate_recipe(recipe: PatchRecipe, spec: SoundSpec, adapter: SynthAdapter)
         raise RecipeContractError(
             "recipe proposes sample import on a synth that does not support it"
         )
+    if (
+        not capabilities.is_supported("user_sample_import")
+        and spec.sample_hypothesis is not None
+        and recipe.sample_alternative is None
+    ):
+        raise RecipeContractError(
+            "the spec suits sample playback, but the recipe does not explain an alternative"
+            " for a synth that cannot import samples"
+        )
     if recipe.engine is not None and recipe.engine not in capabilities.available_engines:
         raise RecipeContractError(f"engine {recipe.engine!r} is not in available_engines")
     vague = [

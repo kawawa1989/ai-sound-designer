@@ -7,6 +7,7 @@ from synth_ai.core.sound_spec.models import (
     AlternativeApproach,
     PatchRecipe,
     RecipeStep,
+    SampleAlternative,
     SoundSpec,
     StepAction,
     SynthesisMethod,
@@ -59,7 +60,13 @@ class FakeSynthAdapter:
                 )
             )
         alternatives: tuple[AlternativeApproach, ...] = ()
+        sample_alternative = None
         if wants_sample and not can_import:
+            sample_alternative = SampleAlternative(
+                reason="サンプル再生の仮説がある",
+                approaches=("fake-sub の減算合成で近似する",),
+                limitation="この機種はサンプルを取り込めない",
+            )
             alternatives = (
                 AlternativeApproach(
                     engine="fake-sub", summary="サンプル取り込み不可のため減算合成で近似"
@@ -73,6 +80,7 @@ class FakeSynthAdapter:
             rationale="Fake adapter recipe",
             steps=tuple(steps),
             alternatives=alternatives,
+            sample_alternative=sample_alternative,
         )
 
     def manual_instructions(self, recipe: PatchRecipe) -> str:
@@ -80,4 +88,8 @@ class FakeSynthAdapter:
         lines += [
             f"{s.order}. [{s.page}] {s.parameter}: {s.value} — {s.reason}" for s in recipe.steps
         ]
+        alt = recipe.sample_alternative
+        if alt is not None:
+            lines += [f"- できないこと: {alt.limitation}"] if alt.limitation else []
+            lines += [f"- 代わりに: {a}" for a in alt.approaches]
         return "\n".join(lines) + "\n"

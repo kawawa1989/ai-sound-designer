@@ -43,6 +43,30 @@ def lead_spec() -> SoundSpec:
     )
 
 
+@pytest.fixture
+def sample_spec() -> SoundSpec:
+    """サンプルの再生が最も向いている参照音（ノイズが多く、ピッチが確定しない）。"""
+    return SoundSpec(
+        spec_id="spec-sample",
+        reference_id="ref-sample",
+        timbre=TimbreSpec(harmonicity=Level.LOW, noisiness=Level.HIGH),
+        envelope=EnvelopeSpec(attack=Speed.FAST, sustain=Level.LOW),
+        targets=(
+            QuantTarget(feature="attack_time", value=3.0, unit="ms", tolerance=2.0, confidence=0.6),
+        ),
+        hypotheses=(
+            SynthesisHypothesis(
+                method=SynthesisMethod.SAMPLE_BASED,
+                rationale="元の音の質感をそのまま使える、ノイズ成分が多い",
+                confidence=0.6,
+            ),
+            SynthesisHypothesis(
+                method=SynthesisMethod.SUBTRACTIVE, rationale="ノイズ成分", confidence=0.2
+            ),
+        ),
+    )
+
+
 @pytest.fixture(scope="session")
 def wav_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return tmp_path_factory.mktemp("wav")

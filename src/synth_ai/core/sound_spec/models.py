@@ -13,7 +13,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SCHEMA_VERSION: Final = "1.0"
 
@@ -235,6 +235,12 @@ class SoundSpec(FrozenModel):
     hypotheses: tuple[SynthesisHypothesis, ...] = ()
     uncertainties: tuple[str, ...] = ()
 
+    @property
+    def sample_hypothesis(self) -> SynthesisHypothesis | None:
+        """サンプルの再生が最も有力な仮説なら、その仮説。そうでなければ None。"""
+        top = max(self.hypotheses, key=lambda h: h.confidence, default=None)
+        return top if top is not None and top.method is SynthesisMethod.SAMPLE_BASED else None
+
 
 # --- PatchRecipe（機種固有） ----------------------------------------------------
 
@@ -273,6 +279,24 @@ class AlternativeApproach(FrozenModel):
     score: float | None = Field(default=None, ge=0, le=1)
 
 
+class SampleAlternative(FrozenModel):
+    """サンプルの再生が向く音を、サンプルを取り込めない機種でどう扱うか。
+
+    approaches（取り込みの代わりにできること）か limitation（対応できない理由）の
+    少なくとも一方を書く。
+    """
+
+    reason: str  # サンプルの再生が向く理由（SoundSpec の仮説の根拠）
+    approaches: tuple[str, ...] = ()
+    limitation: str | None = None
+
+    @model_validator(mode="after")
+    def _explained(self) -> SampleAlternative:
+        if not self.approaches and not self.limitation:
+            raise ValueError("sample alternative needs approaches or a limitation")
+        return self
+
+
 class PatchRecipe(FrozenModel):
     schema_version: Literal["1.0"] = SCHEMA_VERSION
     recipe_id: str
@@ -282,4 +306,7 @@ class PatchRecipe(FrozenModel):
     rationale: str
     steps: tuple[RecipeStep, ...] = ()
     alternatives: tuple[AlternativeApproach, ...] = ()
+    # サンプルの取り込みができない機種で、サンプルの再生が向く音を扱うときの説明
+    sample_alternative: SampleAlternative | None = None
+    limitations: tuple[str, ...] = ()  # 再現の限界（この機種では再現しきれない点）
     uncertainties: tuple[str, ...] = ()

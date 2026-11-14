@@ -90,3 +90,12 @@ uv run synth-ai recipe runs/<analyze の出力> --synth pc3a8
   - それ以外（カットオフ、ENV2 の Depth、AMPENV の Dec1 Level）は値を空にして、音響目標だけを示す
 - 一覧にない波形（三角波など）は選ばず、基準音の SAW のままにする
 - ノイズとレゾナンスは、基準音の配置（SAW → LOPASS → NONE）では設定できないため、未確定事項として示す
+
+### サンプルの再生が向く音（#21）
+
+PC3A8 はユーザーサンプルを読み込めない（"The PC3A does not load samples"、本文 E-1）。
+SoundSpec でサンプルの再生が最も有力な仮説になった音でも、取り込みは提案しない。
+
+- レシピの `sample_alternative` に、できないことと代わりの方法を書く: KVA の発振器で近似する、ノイズ成分を別の Layer の RES NOISE で重ねる、ROM の Keymap を使う（Keymap の名前は、実機で確かめるまで挙げない）
+- 非整数倍音やノイズのように、基準音の配置では再現しきれない点は `limitations`（再現の限界）に書く
+- 取り込めない機種のレシピに `sample_alternative` がなければ、Core の `validate_recipe` がエラーにする（Capability の `user_sample_import` だけを見る）

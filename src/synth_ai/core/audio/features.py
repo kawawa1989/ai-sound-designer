@@ -30,6 +30,7 @@ SPECTRAL_GATE_DB = 60.0  # 重心の計算で無視する、フレーム内の�
 PLATEAU_SLOPE_DB_S = 4.0  # これより緩い傾きを「サステイン」とみなす
 PLATEAU_MIN_S = 0.15
 RELEASE_DROP_DB = 20.0
+RELEASE_PLATEAU_MIN_S = 0.1  # 離す直前の平らな区間として数える最短の長さ
 DECAY_FRACTION = 0.9  # ディケイ: ピークからサステインまでの dB 差のこの割合だけ下がった時点で終わり
 DECAY_MIN_DROP_DB = 1.0  # これより下がらない音は「ディケイなし」（0 ms）
 MAX_PARTIALS = 40
@@ -141,6 +142,28 @@ def _longest_run(mask: np.ndarray) -> tuple[int, int] | None:
     return best
 
 
+def _last_plateau(
+    flat: np.ndarray, db: np.ndarray, run: tuple[int, int], sustain_level: float, hop_s: float
+) -> tuple[int, int]:
+    """サステイン（run）以降で最後の平らな区間 [start, end)。なければ run。
+
+    短すぎる区間（RELEASE_PLATEAU_MIN_S 未満）と、サステインより RELEASE_DROP_DB 以上
+    小さい区間（リリースの尾）は数えない。
+    """
+    min_len = max(int(round(RELEASE_PLATEAU_MIN_S / hop_s)), 1)
+    best = run
+    start = None
+    for i in range(run[1], len(flat) + 1):
+        value = bool(flat[i]) if i < len(flat) else False
+        if value and start is None:
+            start = i
+        elif not value and start is not None:
+            if i - start >= min_len and np.median(db[start:i]) > sustain_level - RELEASE_DROP_DB:
+                best = (start, i)
+            start = None
+    return best
+
+
 def _decay_to_sustain_ms(
     times: np.ndarray, db: np.ndarray, peak_i: int, sustain_level: float
 ) -> float | None:
@@ -184,13 +207,17 @@ def envelope_features(env: Envelope) -> EnvelopeFeatures:
     if sustained and run is not None:
         sustain_start = float(times[run[0]])
         sustain_level = float(np.median(db[run[0] : run[1]]))
-        # 平滑化で前にずれた区間終端を、サステインから 0.5 dB 以内の最後のフレームまで延ばす
-        last = run[1] - 1
-        while last + 1 < len(db) and db[last + 1] >= sustain_level - 0.5:
+        # リリースは、離す直前の平らな区間から測る。押さえている間にフィルターなどで
+        # 音量が下がり、平らな区間が 2 つ以上あるときは、いちばん長い区間ではなく最後の区間（#42）
+        held = _last_plateau(flat, db, run, sustain_level, env.hop_s)
+        held_level = float(np.median(db[held[0] : held[1]]))
+        # 平滑化で前にずれた区間終端を、その区間のレベルから 0.5 dB 以内の最後のフレームまで延ばす
+        last = held[1] - 1
+        while last + 1 < len(db) and db[last + 1] >= held_level - 0.5:
             last += 1
         release_start = float(times[last])
         decay_ms = _decay_to_sustain_ms(times, db, peak_i, sustain_level)
-        end = _first_drop(times, db, sustain_level - RELEASE_DROP_DB, last)
+        end = _first_drop(times, db, held_level - RELEASE_DROP_DB, last)
         release_ms = None if end is None else (end - release_start) * 1000
         rate_end = sustain_start
     else:

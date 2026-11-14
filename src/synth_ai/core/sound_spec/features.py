@@ -9,7 +9,7 @@ class Feature(StrEnum):
     ATTACK_TIME = "attack_time"  # ms: ピーク振幅の 10%→90%
     DECAY_TIME = "decay_time"  # ms: ピーク→サステインの dB 差の 90%（なしなら -20 dB 到達）
     SUSTAIN_LEVEL = "sustain_level"  # dB: ピーク基準
-    RELEASE_TIME = "release_time"  # ms: サステインから 20 dB 下がるまで
+    RELEASE_TIME = "release_time"  # ms: 離す直前の平らな区間から 20 dB 下がるまで
     DECAY_RATE = "decay_rate"  # dB/s: ピーク後の減衰の傾き
     BRIGHTNESS = "brightness"  # ×f0: スペクトル重心 / 基音（全体平均）
     BRIGHTNESS_START = "brightness_start"  # ×f0: 発音直後 100 ms

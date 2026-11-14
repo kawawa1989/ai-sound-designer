@@ -1,19 +1,25 @@
 """全Adapterが満たすべき契約。新しいAdapterは ADAPTERS に追加する。"""
 
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
 from synth_ai.adapters.base import CapabilityStatus, SynthAdapter
 from synth_ai.adapters.fake import FakeSynthAdapter
 from synth_ai.adapters.kronos2 import Kronos2Adapter
+from synth_ai.adapters.pc3a8 import Pc3a8Adapter
 from synth_ai.core.sound_spec.models import PatchRecipe, SoundSpec, StepAction
 from synth_ai.core.workflow.recipe import validate_recipe
+
+DATA = Path(__file__).resolve().parents[2] / "data"
 
 ADAPTERS: dict[str, Callable[[], SynthAdapter]] = {
     "fake": FakeSynthAdapter,
     "fake-with-sampler": lambda: FakeSynthAdapter(sample_import=CapabilityStatus.SUPPORTED),
     "kronos2": Kronos2Adapter,
+    "pc3a8": Pc3a8Adapter,
+    "pc3a8-with-table": lambda: Pc3a8Adapter(parameter_dir=DATA / "pc3a8_parameters"),
 }
 
 

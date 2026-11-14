@@ -73,3 +73,20 @@ AMPENV の時間は、値によって刻みが変わります。`values`（個�
 - AMPENV の Decay・Release 1 と ENV2 の時間の刻み。Att1 と同じと思われるが、確かめていない（Release 1 は 0.05 付近が 0.02 刻みであることだけ確認。表では Att1 と同じ刻みを使う）
 - 時間の 15 秒より上の刻み
 - ブロック 1 の一覧にあるフィルター（2POLE LOWPASS など）の機能パラメータ。2 ブロックのフィルターを使えばレゾナンスを設定できる可能性があるが、基準音の配置（ブロック 2 は 1 スロット）では使っていない
+
+## レシピでの使い方（#20）
+
+`src/synth_ai/adapters/pc3a8/adapter.py` の `Pc3a8Adapter` が、この表を使ってレシピを作ります。
+調整する項目の決め方は KRONOS と共通（`src/synth_ai/core/planning/`）で、表の `roles` でパラメータを引きます。
+
+```bash
+uv run synth-ai recipe runs/<analyze の出力> --synth pc3a8
+```
+
+- 基準音 1025 を呼び出し、そこから変える項目だけを、ページの順（KEYMAP → ALG → DSPCTL → DSPMOD → ENV2 → AMPENV）に並べる
+- `usable` でない項目（`verified: false` など）は手順にしない
+- 値はキャリブレーション曲線（`data/pc3a8_calibration/`、#22）から決める。曲線がないとき:
+  - 時間の項目（秒）は、解析の時間の目標（ms）を換算して初期値にする。解析の測り方（例: アタックは 10%→90%）と本体の値の意味は同じではないので、録音して確かめる
+  - それ以外（カットオフ、ENV2 の Depth、AMPENV の Dec1 Level）は値を空にして、音響目標だけを示す
+- 一覧にない波形（三角波など）は選ばず、基準音の SAW のままにする
+- ノイズとレゾナンスは、基準音の配置（SAW → LOPASS → NONE）では設定できないため、未確定事項として示す

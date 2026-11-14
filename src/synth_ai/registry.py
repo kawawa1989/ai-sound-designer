@@ -9,6 +9,7 @@ from pathlib import Path
 from synth_ai.adapters.base import SynthAdapter
 from synth_ai.adapters.fake import FakeSynthAdapter
 from synth_ai.adapters.kronos2 import Kronos2Adapter
+from synth_ai.adapters.pc3a8 import Pc3a8Adapter
 
 # パラメータ表・キャリブレーション表の置き場所。SYNTH_AI_DATA_DIR で変更できる
 DATA_DIR = Path(os.environ.get("SYNTH_AI_DATA_DIR", Path(__file__).resolve().parents[2] / "data"))
@@ -21,12 +22,23 @@ def _kronos2() -> SynthAdapter:
     )
 
 
+def _pc3a8() -> SynthAdapter:
+    return Pc3a8Adapter(
+        parameter_dir=DATA_DIR / "pc3a8_parameters",
+        calibration_dir=DATA_DIR / "pc3a8_calibration",
+    )
+
+
 # 機種ごとのキャリブレーション表の置き場所
-CALIBRATION_DIRS: dict[str, Path] = {"kronos2": DATA_DIR / "kronos_calibration"}
+CALIBRATION_DIRS: dict[str, Path] = {
+    "kronos2": DATA_DIR / "kronos_calibration",
+    "pc3a8": DATA_DIR / "pc3a8_calibration",
+}
 
 ADAPTER_FACTORIES: dict[str, Callable[[], SynthAdapter]] = {
     "fake": FakeSynthAdapter,
     "kronos2": _kronos2,
+    "pc3a8": _pc3a8,
 }
 
 

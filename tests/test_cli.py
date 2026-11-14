@@ -236,3 +236,81 @@ def test_calibrate_from_recordings(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     assert CliRunner().invoke(app, args).exit_code == 0
     curve = CalibrationCurve.model_validate_json(path.read_text())
     assert [p.parameter_value for p in curve.points] == [30, 60]
+
+
+TWO_SYNTHS = (
+    "synth: kronos2\n"
+    "midi:\n  output_port: KRONOS\n"
+    "test_note:\n  hold_s: 0.01\n  release_tail_s: 0\n"
+    "capture:\n  pre_roll_s: 0\n  input_device: UR22\n"
+    "synths:\n  pc3a8:\n    midi:\n      output_port: PC3A\n      channel: 3\n"
+)
+
+
+def test_midi_probe_selects_synth(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.infrastructure.fakes import FakePort
+
+    opened: list[str] = []
+    port = FakePort()
+
+    def open_output(name: str) -> FakePort:
+        opened.append(name)
+        return port
+
+    monkeypatch.setattr("mido.get_output_names", lambda: ["KRONOS KEYBOARD", "PC3A USB"])
+    monkeypatch.setattr("mido.open_output", open_output)
+    config = tmp_path / "local.yaml"
+    config.write_text(TWO_SYNTHS)
+    result = CliRunner().invoke(
+        app, ["midi-probe", "--synth", "pc3a8", "--hold", "0.01", "--config", str(config)]
+    )
+    assert result.exit_code == 0, result.output
+    assert opened == ["PC3A USB"]
+    assert "pc3a8" in result.output
+    assert port.messages[0].channel == 2  # 設定のチャンネル 3（mido は 0 始まり）
+    assert all(m.type in {"note_on", "note_off", "control_change"} for m in port.messages)
+
+
+def test_capture_unregistered_synth_compares_without_adapter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from synth_ai.infrastructure.capture import recorder as rec_module
+    from tests.infrastructure.fakes import FakePort, FakeRecorder
+
+    runner = CliRunner()
+    ref = write_wav(tmp_path / "ref.wav", saw())
+    out = tmp_path / "run"
+    assert runner.invoke(app, ["analyze", str(ref), "-o", str(out), "--no-plots"]).exit_code == 0
+    monkeypatch.setattr("mido.get_output_names", lambda: ["PC3A USB"])
+    monkeypatch.setattr("mido.open_output", lambda name: FakePort())
+    monkeypatch.setattr(rec_module, "SoundDeviceRecorder", lambda *a: FakeRecorder(saw))
+    config = tmp_path / "local.yaml"
+    config.write_text(TWO_SYNTHS)
+    result = runner.invoke(
+        app, ["capture", "--run", str(out), "-s", "pc3a8", "--config", str(config)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "録音（pc3a8）" in result.output
+    assert "比較レポート: 試行 001" in result.output
+
+
+def test_unknown_synth_is_error(tmp_path: Path) -> None:
+    config = tmp_path / "local.yaml"
+    config.write_text(TWO_SYNTHS)
+    for command in (["devices"], ["midi-probe"], ["capture", "x.wav"], ["calibrate"]):
+        result = CliRunner().invoke(app, [*command, "--synth", "nope", "--config", str(config)])
+        assert result.exit_code == 2, command
+        assert "nope" in result.output
+
+
+def test_devices_shows_selected_synth(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from synth_ai.infrastructure.capture import recorder as rec_module
+
+    monkeypatch.setattr("mido.get_output_names", lambda: ["KRONOS KEYBOARD", "PC3A USB"])
+    monkeypatch.setattr(rec_module, "input_devices", lambda: [])
+    config = tmp_path / "c.yaml"
+    config.write_text(TWO_SYNTHS)
+    result = CliRunner().invoke(app, ["devices", "-s", "pc3a8", "--config", str(config)])
+    assert result.exit_code == 0
+    assert "機種: pc3a8" in result.output
+    assert "* PC3A USB" in result.output and "  KRONOS KEYBOARD" in result.output

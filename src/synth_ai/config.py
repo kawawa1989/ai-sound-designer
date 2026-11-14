@@ -1,4 +1,12 @@
-"""ローカル設定（config/local.yaml）。MIDI の送信先と録音入力を固定する。"""
+"""ローカル設定（config/local.yaml）。MIDI の送信先と録音入力を機種ごとに固定する。
+
+書き方は 2 通り。
+
+- 1 台だけ: 先頭の `synth` と、`midi` / `capture` / `test_note` をそのまま書く（従来の形式）
+- 複数台: `synths:` の下に機種 ID ごとの `midi` / `capture` / `test_note` を書く。
+  書かなかった項目は先頭の同名の項目（なければ既定値）を使う。
+  先頭の `synth` は既定の機種で、`synths` にその機種がなければ先頭の項目がその機種の設定になる
+"""
 
 from __future__ import annotations
 
@@ -36,15 +44,55 @@ class NoteConfig(_Section):
     release_tail_s: float = Field(default=2.0, ge=0, le=30)
 
 
-class LocalConfig(_Section):
-    synth: str = "kronos2"
-    midi: MidiConfig = MidiConfig()
-    capture: CaptureConfig = CaptureConfig()
-    test_note: NoteConfig = NoteConfig()
+class SynthProfile(_Section):
+    """1 台分の接続設定。書かなかった項目は LocalConfig の先頭の項目を使う。"""
+
+    midi: MidiConfig | None = None
+    capture: CaptureConfig | None = None
+    test_note: NoteConfig | None = None
+
+
+class SynthConfig(_Section):
+    """機種を決めたあとの設定。コマンドはこれだけを見る。"""
+
+    synth: str
+    midi: MidiConfig
+    capture: CaptureConfig
+    test_note: NoteConfig
 
 
 class ConfigError(Exception):
     pass
+
+
+class LocalConfig(_Section):
+    synth: str = "kronos2"  # 既定の機種
+    midi: MidiConfig = MidiConfig()
+    capture: CaptureConfig = CaptureConfig()
+    test_note: NoteConfig = NoteConfig()
+    synths: dict[str, SynthProfile] = Field(default_factory=dict)
+
+    def known_synths(self) -> list[str]:
+        return sorted({self.synth, *self.synths})
+
+    def for_synth(self, synth_id: str | None = None) -> SynthConfig:
+        """機種の設定を返す。synth_id を省略すると既定の機種。"""
+        synth = synth_id or self.synth
+        profile = self.synths.get(synth)
+        if profile is None:
+            if synth != self.synth:
+                known = ", ".join(self.known_synths())
+                raise ConfigError(
+                    f"「{synth}」の接続設定がありません（設定済み: {known}）。"
+                    f"config/local.yaml の synths: に {synth} を追加してください"
+                )
+            profile = SynthProfile()
+        return SynthConfig(
+            synth=synth,
+            midi=profile.midi or self.midi,
+            capture=profile.capture or self.capture,
+            test_note=profile.test_note or self.test_note,
+        )
 
 
 def load_config(path: Path | None = None) -> LocalConfig:

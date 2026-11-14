@@ -5,8 +5,8 @@ import numpy as np
 
 from synth_ai.adapters.base import CapabilityStatus
 from synth_ai.adapters.kronos2 import Kronos2Adapter
-from synth_ai.adapters.kronos2.roles import Role
 from synth_ai.core.audio.analyze import AnalysisResult
+from synth_ai.core.planning.roles import Role
 from synth_ai.core.sound_spec.derive import derive_sound_spec
 from synth_ai.core.sound_spec.models import SoundSpec, StepAction, StepStatus
 from synth_ai.core.synthesis import test_signals as ts

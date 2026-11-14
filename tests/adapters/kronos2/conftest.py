@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from synth_ai.adapters.kronos2.roles import Role
+from synth_ai.core.planning.roles import Role
 
 
 def numeric(role: Role, **extra: Any) -> dict[str, Any]:

@@ -1,9 +1,9 @@
-"""SoundSpec から AL-1（減算合成）で調整する項目を決める。"""
+"""SoundSpec から、減算合成（オシレーター → フィルター → アンプ）で調整する項目を決める。"""
 
 from __future__ import annotations
 
-from synth_ai.adapters.kronos2.intents import Intent
-from synth_ai.adapters.kronos2.roles import ChoiceTag, Role
+from synth_ai.core.planning.intents import Intent
+from synth_ai.core.planning.roles import ChoiceTag, Role
 from synth_ai.core.sound_spec.derive import target_of
 from synth_ai.core.sound_spec.features import Feature
 from synth_ai.core.sound_spec.models import Level, SoundSpec, StepAction
@@ -35,7 +35,7 @@ def choose_waveform(spec: SoundSpec) -> tuple[ChoiceTag, str]:
     )
 
 
-def al1_intents(spec: SoundSpec) -> list[Intent]:
+def subtractive_intents(spec: SoundSpec) -> list[Intent]:
     intents: list[Intent] = []
     wave, reason = choose_waveform(spec)
     intents.append(Intent(Role.OSCILLATOR_WAVEFORM, StepAction.SELECT, reason, choice=wave))

@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from synth_ai.adapters.kronos2.parameters import ParameterTable, load_table
-from synth_ai.adapters.kronos2.roles import ChoiceTag, Role
+from synth_ai.core.planning.roles import ChoiceTag, Role
 from tests.adapters.kronos2.conftest import full_table, numeric
 
 

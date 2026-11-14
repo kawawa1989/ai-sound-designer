@@ -11,11 +11,11 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-from synth_ai.adapters.kronos2.intents import Intent
-from synth_ai.adapters.kronos2.parameters import ParameterDef, ParameterKind, ParameterTable
-from synth_ai.adapters.kronos2.roles import ROLE_LABELS
 from synth_ai.core.audio.notes import hz_to_note, note_to_hz
 from synth_ai.core.calibration.models import CalibrationCurve, CalibrationSet
+from synth_ai.core.planning.intents import Intent
+from synth_ai.core.planning.protocols import P, RecipeParameter, RecipeTable
+from synth_ai.core.planning.roles import ROLE_LABELS
 from synth_ai.core.sound_spec.features import LABELS, Feature
 from synth_ai.core.sound_spec.models import QuantTarget, RecipeStep, StepStatus
 
@@ -47,7 +47,7 @@ class PitchShift:
 
 
 def pitch_shift(
-    param: ParameterDef, curve: CalibrationCurve, f0_hz: float | None
+    param: RecipeParameter, curve: CalibrationCurve, f0_hz: float | None
 ) -> PitchShift | None:
     """音程の違う参照音に曲線を使うときのずれ。補正できない・不要なら None。
 
@@ -105,7 +105,7 @@ def describe_intent(intent: Intent) -> str:
 
 def render_steps(
     intents: list[Intent],
-    table: ParameterTable | None,
+    table: RecipeTable[P] | None,
     calibrations: CalibrationSet,
     f0_hz: float | None = None,
 ) -> RenderResult:
@@ -130,7 +130,7 @@ def render_steps(
                 continue
             value = choice.value
         elif intent.extreme is not None:
-            if param.kind is ParameterKind.CHOICE:
+            if param.is_choice:
                 result.uncertainties.append(f"{param.name} は選択式のため最小・最大を指定できない")
                 continue
             assert param.min is not None and param.max is not None
@@ -138,7 +138,7 @@ def render_steps(
             if bound is None:  # zero
                 bound = 0.0 if param.min <= 0 <= param.max else param.min
             value = param.clamp(bound)
-        elif intent.target is not None and param.kind is not ParameterKind.CHOICE:
+        elif intent.target is not None and not param.is_choice:
             assert table is not None
             curve = next(
                 (
@@ -167,7 +167,7 @@ def render_steps(
             RecipeStep(
                 order=len(result.steps) + 1,
                 action=intent.action,
-                page=param.page if param.tab is None else f"{param.page} › {param.tab}",
+                page=param.location,
                 parameter_id=param.id,
                 parameter=param.name,
                 value=value,

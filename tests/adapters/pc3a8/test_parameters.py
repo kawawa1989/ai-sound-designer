@@ -149,8 +149,8 @@ def test_rejects_invalid_grid(bad: dict[str, Any]) -> None:
 
 
 def test_roles_match_kronos_vocabulary() -> None:
-    """共通の概念は KRONOS と同じ役割名を使う（共通化は #20）。"""
-    from synth_ai.adapters.kronos2.roles import Role
+    """役割は Core の共通の語彙（core.planning.roles）から選ぶ。"""
+    from synth_ai.core.planning.roles import Role
 
     assert ROLES.issubset({r.value for r in Role})
 

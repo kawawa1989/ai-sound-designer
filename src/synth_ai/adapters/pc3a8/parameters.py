@@ -179,6 +179,14 @@ class ParameterDef(BaseModel):
                 value -= self.step
         return int(round(value)) if self.kind is ParameterKind.INT else round(value, 4)
 
+    @property
+    def is_choice(self) -> bool:
+        return self.kind is ParameterKind.CHOICE
+
+    @property
+    def location(self) -> str:
+        return self.page if self.section is None else f"{self.page} › {self.section}"
+
     def choice_with(self, tag: str) -> Choice | None:
         return next((c for c in self.choices if tag in c.tags), None)
 
@@ -227,6 +235,10 @@ class ParameterTable(BaseModel):
             (p for p in self.parameters if role in p.roles and (p.usable or not usable_only)),
             None,
         )
+
+    def curve_ids(self, param: ParameterDef) -> tuple[str, ...]:
+        """キャリブレーション曲線を探す ID（このパラメータ自身の曲線だけ）。"""
+        return (param.id,)
 
     def by_id(self, parameter_id: str) -> ParameterDef | None:
         return next((p for p in self.parameters if p.id == parameter_id), None)

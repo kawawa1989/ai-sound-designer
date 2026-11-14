@@ -1,4 +1,4 @@
-"""比較の差分から、AL-1 のどのパラメータをどちらに動かすかを提案する。
+"""比較の差分から、減算合成のどのパラメータをどちらに動かすかを提案する。
 
 特徴とパラメータの向きは一般的な減算合成の傾向（例: アタックの値を上げると
 立ち上がりが遅くなる）。キャリブレーション曲線があれば、向きと量はそちらを優先する。
@@ -6,14 +6,14 @@
 
 from __future__ import annotations
 
-from synth_ai.adapters.kronos2.al1 import choose_waveform
-from synth_ai.adapters.kronos2.parameters import ParameterKind, ParameterTable
-from synth_ai.adapters.kronos2.recipe import pitch_shift
-from synth_ai.adapters.kronos2.roles import ROLE_LABELS, Role
 from synth_ai.core.calibration.models import CalibrationSet
 from synth_ai.core.comparison.models import AdjustmentSuggestion, Difference
 from synth_ai.core.comparison.suggest import MAX_SUGGESTIONS, significant_features
 from synth_ai.core.comparison.wording import as_feature, fix_word
+from synth_ai.core.planning.protocols import P, RecipeTable
+from synth_ai.core.planning.render import pitch_shift
+from synth_ai.core.planning.roles import ROLE_LABELS, Role
+from synth_ai.core.planning.subtractive import choose_waveform
 from synth_ai.core.sound_spec.features import Feature
 from synth_ai.core.sound_spec.models import PatchRecipe, SoundSpec, StepAction
 
@@ -48,7 +48,7 @@ def suggest_adjustments(
     spec: SoundSpec,
     differences: tuple[Difference, ...],
     recipe: PatchRecipe | None,
-    table: ParameterTable | None,
+    table: RecipeTable[P] | None,
     calibrations: CalibrationSet,
 ) -> tuple[AdjustmentSuggestion, ...]:
     out: list[AdjustmentSuggestion] = []
@@ -79,7 +79,7 @@ def _numeric_suggestion(
     sign: int,
     d: Difference,
     recipe: PatchRecipe | None,
-    table: ParameterTable | None,
+    table: RecipeTable[P] | None,
     calibrations: CalibrationSet,
     f0_hz: float | None = None,
 ) -> AdjustmentSuggestion:
@@ -105,7 +105,7 @@ def _numeric_suggestion(
 
     value: float | int | None = None
     shift_note = ""
-    if curve is not None and param is not None and param.kind is not ParameterKind.CHOICE:
+    if curve is not None and param is not None and not param.is_choice:
         target, measured = curve.inverse(d.reference), curve.inverse(d.recording)
         current = _current_value(recipe, param.id)
         if target is not None and measured is not None and current is not None:
@@ -138,7 +138,7 @@ def _numeric_suggestion(
 
 
 def _waveform_suggestion(
-    spec: SoundSpec, d: Difference, table: ParameterTable | None
+    spec: SoundSpec, d: Difference, table: RecipeTable[P] | None
 ) -> AdjustmentSuggestion:
     tag, why = choose_waveform(spec)
     param = table.by_role(Role.OSCILLATOR_WAVEFORM) if table else None

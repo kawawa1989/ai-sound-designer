@@ -1,6 +1,6 @@
 """レシピの中間表現。「どの役割のパラメータを、どの音響目標に向けて動かすか」。
 
-パラメータ表とキャリブレーション表を引く前の段階なので、KRONOS の具体的な
+パラメータ表とキャリブレーション表を引く前の段階なので、機種の具体的な
 パラメータ名・値は含まない。
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from synth_ai.adapters.kronos2.roles import ChoiceTag, Role
+from synth_ai.core.planning.roles import ChoiceTag, Role
 from synth_ai.core.sound_spec.models import QuantTarget, StepAction
 
 

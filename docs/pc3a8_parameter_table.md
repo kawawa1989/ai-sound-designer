@@ -17,7 +17,7 @@
 | 範囲が分からない項目 | 書かない | `verified: false` で、`min` / `max` を空にできる |
 
 役割（`roles`）と選択肢のタグは、KRONOS の表と同じ名前を使います（例: `amp_eg_release`、`saw`）。
-共通の語彙にするかどうかは #20 で決めます。
+役割と選択肢のタグは機種共通の語彙で、`src/synth_ai/core/planning/roles.py` が正です（#20）。
 
 ## 項目
 

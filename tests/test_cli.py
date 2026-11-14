@@ -405,7 +405,7 @@ def test_calibrate_pc3a8_cc_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert "1026 KVA CC CAL を選んでいますか" in result.output
     controls = [(m.control, m.value) for m in port.messages if m.type == "control_change"]
     sent = [v for c, v in controls if c == 14]
-    assert sent[:3] == [34, 62, 91] and sent[-1] == 0  # 終わったら 0 に戻す
+    assert sent[:3] == [34, 63, 91] and sent[-1] == 0  # 終わったら 0 に戻す
     assert {c for c, _ in controls} <= {14, 123}
     curve = CalibrationCurve.model_validate_json(
         (tmp_path / "cal" / "cc" / "kva.dspctl.lp_frq__brightness_end.json").read_text()

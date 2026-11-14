@@ -129,6 +129,7 @@
         "control": 14,
         "base": 49,
         "depth_cents": 10800,
+        "divisor": 128,
         "program": "1026 KVA CC CAL"
       }
     },
@@ -378,6 +379,13 @@
         0.8,
         1.6
       ],
+      "cc_calibration": {
+        "control": 15,
+        "base": 1.6,
+        "rate_depth": 50,
+        "divisor": 128,
+        "program": "1027 KVA ENVCTL CAL"
+      },
       "roles": [
         "amp_eg_release"
       ],

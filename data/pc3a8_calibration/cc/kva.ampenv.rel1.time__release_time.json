@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "synth_id": "pc3a8",
+  "parameter_id": "kva.ampenv.rel1.time",
+  "feature": "release_time",
+  "unit": "ms",
+  "conditions": "1027 KVA ENVCTL CAL / 1027 KVA ENVCTL CAL を CC 15 で設定（値 = 1.6 ÷ 50^(CC/128)、比例を仮定） / C4 / velocity 100 / hold 1.5s / tail 4s",
+  "measured_at": "2026-11-14",
+  "reference_note": "C4",
+  "parameter_scale": "linear",
+  "points": [
+    {
+      "parameter_value": 0.0608,
+      "feature_value": 18.145
+    },
+    {
+      "parameter_value": 0.0991,
+      "feature_value": 24.81
+    },
+    {
+      "parameter_value": 0.2002,
+      "feature_value": 43.099
+    },
+    {
+      "parameter_value": 0.4044,
+      "feature_value": 83.618
+    },
+    {
+      "parameter_value": 0.7922,
+      "feature_value": 157.277
+    },
+    {
+      "parameter_value": 1.6,
+      "feature_value": 313.055
+    }
+  ]
+}

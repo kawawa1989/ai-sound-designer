@@ -601,8 +601,7 @@ def calibrate(
         points = tuple(by_value)
         cc_mode = (control, by_value, allowed)
         conditions = (f"{conditions} / " if conditions else "") + (
-            f"{control.program} を CC {control.control} で設定"
-            f"（値 = {control.base:g} × 2^({control.depth_cents:g} ct × CC/127)、比例を仮定）"
+            f"{control.program} を CC {control.control} で設定（{control.describe()}）"
         )
 
     note_name = note or cfg.test_note.note

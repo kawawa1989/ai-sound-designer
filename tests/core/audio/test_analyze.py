@@ -69,6 +69,26 @@ def test_sustained_note(analyze_signal: Analyze) -> None:
     assert env.release_ms == pytest.approx(0.9 * 400, rel=0.1)
 
 
+def test_release_starts_after_level_drop_while_held(analyze_signal: Analyze) -> None:
+    """押さえている間に音量が下がっても、リリースは離したところから測る（#42）。
+
+    フィルターが閉じて音量が下がる音（PC3A8 の試行 006）の代わりに、サステインの途中の
+    1.0〜1.5 秒で 6 dB 下げ、1.75 秒で離す。
+    以前の解析は 1.05 秒をリリースの始まりと見て、約 950 ms と出した。
+    """
+    sr = ts.DEFAULT_SR
+    adsr = Adsr(attack_s=0.005, decay_s=0.1, sustain=0.6, release_s=0.3, note_s=1.75)
+    tone = ts.saw(adsr=adsr)
+    t = np.arange(len(tone)) / sr
+    gain_db = np.interp(t, [1.0, 1.5], [0.0, -6.0])
+    env = analyze_signal("held_drop", tone * 10 ** (gain_db / 20)).analysis.envelope
+    assert env is not None and env.sustained
+    # サステインは、いちばん長い平らな区間（下がる前）のまま
+    assert env.sustain_level_db == pytest.approx(20 * np.log10(0.6), abs=1.0)
+    assert env.release_start_s == pytest.approx(1.75, abs=0.05)
+    assert env.release_ms == pytest.approx(0.9 * 300, rel=0.1)
+
+
 def test_pluck_has_no_sustain(analyze_signal: Analyze) -> None:
     env = analyze_signal("pluck", ts.pluck(220.0)).analysis.envelope
     assert env is not None and not env.sustained

@@ -104,7 +104,7 @@ class EnvelopeFeatures(FrozenModel):
     decay_ms: ピークからサステインまでの dB 差の 90% 下がるまで（差が 1 dB 未満なら 0）。
               サステインなしなら -20 dB 到達まで
     sustain_level_db: サステイン区間の中央値（ピーク基準、サステインなしなら None）
-    release_ms: サステイン終了から 20 dB 減衰するまで（未到達なら None）
+    release_ms: 離す直前の平らな区間の終わりから、その区間より 20 dB 減衰するまで（未到達なら None）
     decay_rate_db_per_s: ピーク後の減衰の傾き（負の値ほど速く減衰）
     """
 

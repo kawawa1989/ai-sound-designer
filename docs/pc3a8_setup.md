@@ -87,7 +87,7 @@ uv run synth-ai devices -s pc3a8
 
 ### マスターエフェクト（Effect モード）
 
-Program モードの音には、Effect モードのマスターエフェクト（コンプレッサーと EQ）が掛かる（本文 9-8）。
+Program モードの音には、Effect モードのマスターエフェクト（コンプレッサーと EQ）が掛かる（本文 9-8）。確かめ方は `docs/manuals/pc3a8/check_master_effects.md`。
 2026-11-14 に読み取った状態（変更はしていない）:
 
 | 項目 | 値 | 測定への影響 |
@@ -121,5 +121,5 @@ Program モードの音には、Effect モードのマスターエフェクト�
 
 1. 参照音を解析する: `uv run synth-ai analyze <参照.wav> -o runs/<名前>`
 2. PC3A8 のレシピを作る: `uv run synth-ai recipe runs/<名前> -s pc3a8`
-3. 本体で設定し、録音・比較する: `docs/manuals/pc3a8/run_trial.md`
+3. 本体で設定し、録音・比較する: `docs/manuals/pc3a8/run_trial.md`（本体の操作の基本は `docs/manuals/pc3a8/program_editor.md`）
 4. 必要ならキャリブレーション曲線を測り直す: `docs/manuals/pc3a8/calibrate.md`

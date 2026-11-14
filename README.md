@@ -16,7 +16,7 @@ cp config/local.example.yaml config/local.yaml
 ## 実機の準備（PC3A8）
 
 最初に `docs/safety.md` の「PC3A8」と `docs/pc3a8_setup.md`（接続・録音）を確認してください。
-本体の操作手順は `docs/manuals/pc3a8/` にあります（値の読み取り、キャリブレーション、レシピどおりの設定と比較）。
+本体の操作手順は `docs/manuals/` にあります。一覧と書き方は `docs/manuals/README.md`（保存、名前の変更、バックアップ、元に戻す、基準音の作り方、キャリブレーション、レシピどおりの設定と比較）。
 
 ```bash
 uv run synth-ai devices -s pc3a8                              # MIDI 出力ポートと録音デバイスを確認

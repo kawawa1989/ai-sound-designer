@@ -1,5 +1,9 @@
 # config/local.yaml にコピーして使う（git 管理外）。
 # ポート名・デバイス名は `uv run synth-ai devices` で確認できる（部分一致で指定可）。
+#
+# 先頭の midi / capture / test_note は既定の機種（synth）の設定。
+# ほかの機種は synths: の下に書き、コマンドに --synth（-s）で指定する（例: synth-ai capture -s pc3a8）。
+# synths: に書かなかった項目は、先頭の同じ項目を使う。
 synth: kronos2
 
 midi:
@@ -20,3 +24,10 @@ test_note:
   velocity: 100
   hold_s: 1.5         # Note On から Note Off まで
   release_tail_s: 2.0 # Note Off 後に録音を続ける長さ
+
+synths:
+  pc3a8:
+    midi:
+      output_port: null # 例: "PC3A"（USB MIDI）またはオーディオインターフェースの MIDI ポート
+      channel: 1        # PC3A8 の Program モードで選んでいる MIDI チャンネルに合わせる
+    # capture: を書かなければ、先頭の capture（同じオーディオインターフェース）を使う

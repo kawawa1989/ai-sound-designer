@@ -188,7 +188,7 @@ def capture_note(
         warnings.append("録音中に取りこぼし（オーバーフロー）がありました。録り直しを推奨します")
     if peak >= CLIP_LEVEL:
         warnings.append(
-            "クリップしています。KRONOS の出力音量か入力ゲインを下げて録り直してください"
+            "クリップしています。シンセの出力音量か入力ゲインを下げて録り直してください"
         )
     elif peak_dbfs > settings.peak_warn_dbfs:
         warnings.append(f"ピークが {peak_dbfs:.1f} dBFS と大きく、クリップの恐れがあります")

@@ -11,7 +11,7 @@ import typer
 from synth_ai import __version__
 
 if TYPE_CHECKING:
-    from synth_ai.config import LocalConfig
+    from synth_ai.config import SynthConfig
     from synth_ai.core.calibration.session import CalibrationPlan, SessionResult
     from synth_ai.infrastructure.capture.recorder import CaptureSettings
 from synth_ai.registry import ADAPTER_FACTORIES, get_adapter
@@ -200,11 +200,18 @@ ConfigOption = Annotated[
 ]
 
 
-def _config(path: Path | None) -> LocalConfig:
+SynthOption = Annotated[
+    str | None,
+    typer.Option("--synth", "-s", help="接続する機種（既定: 設定の synth）"),
+]
+
+
+def _config(path: Path | None, synth: str | None = None) -> SynthConfig:
+    """設定を読み、機種の接続設定を返す。"""
     from synth_ai.config import ConfigError, load_config
 
     try:
-        return load_config(path)
+        return load_config(path).for_synth(synth)
     except ConfigError as exc:
         typer.secho(f"エラー: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from exc
@@ -216,12 +223,13 @@ def _fail(exc: Exception) -> typer.Exit:
 
 
 @app.command()
-def devices(config: ConfigOption = None) -> None:
+def devices(config: ConfigOption = None, synth: SynthOption = None) -> None:
     """接続中の MIDI 出力ポートと録音デバイスを表示する（* は設定で選ばれているもの）。"""
     from synth_ai.infrastructure.capture.recorder import input_devices
     from synth_ai.infrastructure.midi.sender import output_port_names
 
-    cfg = _config(config)
+    cfg = _config(config, synth)
+    typer.echo(f"機種: {cfg.synth}")
     wanted_port = (cfg.midi.output_port or "").lower()
     wanted_input = (cfg.capture.input_device or "").lower()
     typer.echo("MIDI 出力ポート:")
@@ -230,7 +238,7 @@ def devices(config: ConfigOption = None) -> None:
         mark = "*" if wanted_port and wanted_port in name.lower() else " "
         typer.echo(f"  {mark} {name}")
     if not ports:
-        typer.echo("    （なし）KRONOS を USB で接続し、電源が入っているか確認してください")
+        typer.echo("    （なし）シンセかオーディオインターフェースの接続と電源を確認してください")
     typer.echo("録音デバイス（入力）:")
     for d in input_devices():
         mark = "*" if wanted_input and wanted_input in d.name.lower() else " "
@@ -245,12 +253,13 @@ def midi_probe(
     port: Annotated[str | None, typer.Option(help="MIDI 出力ポート（既定: 設定）")] = None,
     channel: Annotated[int | None, typer.Option(min=1, max=16)] = None,
     config: ConfigOption = None,
+    synth: SynthOption = None,
 ) -> None:
     """MIDI で 1 音だけ鳴らし、PC から発音できるか確かめる（Note On/Off のみ送信）。"""
     from synth_ai.core.audio.notes import note_to_midi
     from synth_ai.infrastructure.midi.sender import MidiError, open_sender
 
-    cfg = _config(config)
+    cfg = _config(config, synth)
     port_name = port or cfg.midi.output_port
     if not port_name:
         raise _fail(ValueError("MIDI 出力ポートが未設定です（--port または config/local.yaml）"))
@@ -258,11 +267,11 @@ def midi_probe(
     try:
         number = note_to_midi(note_name)
         with open_sender(port_name, channel or cfg.midi.channel) as sender:
-            typer.echo(f"{port_name} に {note_name}（{number}）を送ります")
+            typer.echo(f"{cfg.synth}: {port_name} に {note_name}（{number}）を送ります")
             sender.play(number, velocity or cfg.test_note.velocity, hold or cfg.test_note.hold_s)
     except (MidiError, ValueError) as exc:
         raise _fail(exc) from exc
-    typer.echo("送信しました。KRONOS から音が出たか確認してください")
+    typer.echo(f"送信しました。{cfg.synth} から音が出たか確認してください")
 
 
 @app.command()
@@ -283,6 +292,7 @@ def capture(
         bool, typer.Option("--compare/--no-compare", help="--run 指定時、録音後に比較する")
     ] = True,
     config: ConfigOption = None,
+    synth: SynthOption = None,
 ) -> None:
     """1 音を録音する。MIDI が設定されていれば PC から発音し、なければ合図に合わせて手で弾く。"""
     from contextlib import nullcontext
@@ -300,7 +310,7 @@ def capture(
     )
     from synth_ai.infrastructure.midi.sender import MidiError, open_sender
 
-    cfg = _config(config)
+    cfg = _config(config, synth)
     if out is None and run_dir is None:
         raise _fail(ValueError("保存先 WAV か --run を指定してください"))
 
@@ -340,7 +350,10 @@ def capture(
             if use_midi
             else nullcontext(None)
         )
-        typer.echo(f"録音: {note_name}（ノート {settings.note}、ベロシティ {settings.velocity}）")
+        typer.echo(
+            f"録音（{cfg.synth}）: {note_name}"
+            f"（ノート {settings.note}、ベロシティ {settings.velocity}）"
+        )
         with sender_ctx as sender:
             result = capture_note(recorder, sender, settings, prompt=typer.echo)
         write_capture(out, result)
@@ -352,11 +365,13 @@ def capture(
         typer.secho(f"注意: {w}", fg=typer.colors.YELLOW)
     if run_dir is not None and compare_after:
         typer.echo("")
-        compare(run_dir, out, cfg.synth, plots=True)
+        # レシピ用の Adapter がまだない機種は、調整案なしで比べる
+        known = cfg.synth if cfg.synth in ADAPTER_FACTORIES else None
+        compare(run_dir, out, known, plots=True)
 
 
 def _record_calibration(
-    cfg: LocalConfig,
+    cfg: SynthConfig,
     plan: CalibrationPlan,
     settings: CaptureSettings,
     manual: bool,
@@ -455,6 +470,7 @@ def calibrate(
         ),
     ] = None,
     config: ConfigOption = None,
+    synth: SynthOption = None,
 ) -> None:
     """実機でパラメータを数段階変えて録音し、キャリブレーション曲線を作る（対話式）。"""
     from dataclasses import replace
@@ -484,8 +500,11 @@ def calibrate(
     from synth_ai.infrastructure.midi.sender import MidiError
     from synth_ai.registry import CALIBRATION_DIRS
 
-    cfg = _config(config)
-    adapter = get_adapter(cfg.synth)
+    cfg = _config(config, synth)
+    try:
+        adapter = get_adapter(cfg.synth)
+    except ValueError as exc:
+        raise _fail(exc) from exc
     if not isinstance(adapter, ParameterCatalog):
         raise _fail(ValueError(f"{cfg.synth} はパラメータ表を持っていません"))
 

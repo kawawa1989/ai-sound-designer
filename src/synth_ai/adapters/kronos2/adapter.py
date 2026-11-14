@@ -11,8 +11,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 from synth_ai.adapters.base import Capabilities, CapabilityStatus, ParameterInfo
-from synth_ai.adapters.kronos2.adjust import suggest_adjustments
-from synth_ai.adapters.kronos2.al1 import al1_intents
 from synth_ai.adapters.kronos2.engine_select import (
     AL1,
     ENGINE_DESCRIPTIONS,
@@ -20,7 +18,6 @@ from synth_ai.adapters.kronos2.engine_select import (
     MOD7,
     rank_engines,
 )
-from synth_ai.adapters.kronos2.intents import Intent
 from synth_ai.adapters.kronos2.parameters import (
     ParameterDef,
     ParameterKind,
@@ -28,10 +25,13 @@ from synth_ai.adapters.kronos2.parameters import (
     load_table,
     table_path,
 )
-from synth_ai.adapters.kronos2.recipe import describe_intent, describe_target, render_steps
-from synth_ai.adapters.kronos2.roles import CALIBRATION_FEATURES
 from synth_ai.core.calibration.models import CalibrationSet
 from synth_ai.core.comparison.models import AdjustmentSuggestion, Difference
+from synth_ai.core.planning.adjust import suggest_adjustments
+from synth_ai.core.planning.intents import Intent
+from synth_ai.core.planning.render import describe_intent, describe_target, render_steps
+from synth_ai.core.planning.roles import CALIBRATION_FEATURES
+from synth_ai.core.planning.subtractive import subtractive_intents
 from synth_ai.core.sound_spec.models import (
     AlternativeApproach,
     PatchRecipe,
@@ -42,7 +42,7 @@ from synth_ai.core.sound_spec.models import (
 ENGINES = (AL1, MOD7, HD1)
 
 # レシピ生成に対応済みのエンジン。MOD-7 / HD-1 は順位付けのみ
-INTENT_BUILDERS: dict[str, Callable[[SoundSpec], list[Intent]]] = {AL1: al1_intents}
+INTENT_BUILDERS: dict[str, Callable[[SoundSpec], list[Intent]]] = {AL1: subtractive_intents}
 
 PREPARATION = (
     "テスト用に決めた Program 番号を選ぶ（既存の音色を上書きしない）",

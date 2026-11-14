@@ -7,11 +7,11 @@ import pytest
 
 from synth_ai.adapters.kronos2 import Kronos2Adapter
 from synth_ai.adapters.kronos2.parameters import ParameterTable
-from synth_ai.adapters.kronos2.recipe import pitch_shift
-from synth_ai.adapters.kronos2.roles import Role
 from synth_ai.core.audio.notes import note_to_hz
 from synth_ai.core.calibration.models import CalibrationCurve
 from synth_ai.core.comparison.models import Difference, DifferenceKind
+from synth_ai.core.planning.render import pitch_shift
+from synth_ai.core.planning.roles import Role
 from synth_ai.core.sound_spec.models import (
     PitchTarget,
     QuantTarget,

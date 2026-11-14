@@ -12,7 +12,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from synth_ai.adapters.kronos2.roles import ChoiceTag, Role
+from synth_ai.core.planning.roles import ChoiceTag, Role
 
 
 class ParameterKind(StrEnum):
@@ -72,7 +72,15 @@ class ParameterDef(BaseModel):
                 value -= self.step
         return int(round(value)) if self.kind is ParameterKind.INT else round(value, 4)
 
-    def choice_with(self, tag: ChoiceTag) -> Choice | None:
+    @property
+    def is_choice(self) -> bool:
+        return self.kind is ParameterKind.CHOICE
+
+    @property
+    def location(self) -> str:
+        return self.page if self.tab is None else f"{self.page} › {self.tab}"
+
+    def choice_with(self, tag: str) -> Choice | None:
         return next((c for c in self.choices if tag in c.tags), None)
 
 
@@ -108,7 +116,7 @@ class ParameterTable(BaseModel):
             raise ValueError(f"calibration_source not in table: {unknown}")
         return self
 
-    def by_role(self, role: Role) -> ParameterDef | None:
+    def by_role(self, role: str) -> ParameterDef | None:
         """役割を担うパラメータ。複数あれば表の先頭のもの。"""
         return next((p for p in self.parameters if role in p.roles), None)
 

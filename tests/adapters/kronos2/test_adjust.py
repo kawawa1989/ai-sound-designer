@@ -2,8 +2,8 @@ import json
 from pathlib import Path
 
 from synth_ai.adapters.kronos2 import Kronos2Adapter
-from synth_ai.adapters.kronos2.roles import Role
 from synth_ai.core.comparison.models import Difference, DifferenceKind
+from synth_ai.core.planning.roles import Role
 from synth_ai.core.sound_spec.models import (
     PatchRecipe,
     RecipeStep,

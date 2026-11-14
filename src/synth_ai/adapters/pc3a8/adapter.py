@@ -1,0 +1,256 @@
+"""Kurzweil PC3A8 用 Adapter。
+
+PC3A8 のパラメータを読み書きする SysEx の形式は公開されていないため、このツールは音色を
+変えない。レシピは、人が本体の Program Editor で設定するための手順書として出す。
+
+レシピは基準音 1025（パラメータ表の layout）を呼び出し、そこから変える項目だけを並べる。
+パラメータ表（data/pc3a8_parameters/）とキャリブレーション表（data/pc3a8_calibration/）は
+コンストラクタで受け取る。表がなければ具体的な手順は出さず、調整する項目と音響目標だけを示す。
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from synth_ai.adapters.base import Capabilities, CapabilityStatus, ParameterInfo
+from synth_ai.adapters.pc3a8.parameters import Layout, ParameterDef, ParameterTable, load_table
+from synth_ai.core.calibration.models import CalibrationSet
+from synth_ai.core.comparison.models import AdjustmentSuggestion, Difference
+from synth_ai.core.planning.adjust import suggest_adjustments
+from synth_ai.core.planning.render import describe_intent, describe_target, render_steps
+from synth_ai.core.planning.roles import CALIBRATION_FEATURES, Role
+from synth_ai.core.planning.subtractive import subtractive_intents
+from synth_ai.core.sound_spec.models import (
+    PatchRecipe,
+    QuantTarget,
+    RecipeStep,
+    SoundSpec,
+    StepStatus,
+    SynthesisMethod,
+)
+
+ENGINE = "KVA"
+
+# Program Editor で設定する順番（ページ名。本文 6-12 のソフトボタン）
+PAGE_ORDER = ("KEYMAP", "ALG", "DSPCTL", "DSPMOD", "ENV2", "AMPENV", "COMMON")
+
+# 時間の目標（ms）を、秒の項目の初期値にするときの換算
+TIME_UNITS = {("ms", "s"): 0.001, ("s", "s"): 1.0}
+
+
+def _initial_value(param: ParameterDef, target: QuantTarget) -> float | None:
+    """キャリブレーション曲線がないときの初期値。単位がそろう時間の項目だけ。"""
+    factor = TIME_UNITS.get((target.unit, param.unit or ""))
+    return target.value * factor if factor is not None else None
+
+
+def _page_rank(step: RecipeStep) -> int:
+    page = step.page.split(" › ")[0]
+    return PAGE_ORDER.index(page) if page in PAGE_ORDER else len(PAGE_ORDER)
+
+
+def _blocks(layout: Layout) -> str:
+    return " → ".join(layout.blocks)
+
+
+def _preparation(layout: Layout | None) -> list[str]:
+    if layout is None:
+        return [
+            "テスト用の Program（docs/safety.md の「テスト用の領域」）を選ぶ。"
+            "既存の Program を上書きしない",
+        ]
+    return [
+        f"Program モードで基準音 **{layout.program}** を選ぶ"
+        "（設定は docs/safety.md の「基準音 1025 の設定」）",
+        "**Edit** で Program Editor に入る。編集中は Program を切り替えない"
+        "（保存していない編集は警告なしで消える。本文 6-3）",
+        f"**KEYMAP** が {layout.keymap}、**ALG** が Algorithm {layout.algorithm}"
+        f"（{_blocks(layout)}）、**AMPENV** のモードが User であることを確かめる"
+        "（本文 6-22〜6-23, 6-42, 6-53）",
+        "Effect モードの Master Cmpr. が Out のままか確かめる"
+        "（docs/pc3a8_setup.md の「マスターエフェクト」）",
+    ]
+
+
+SAVE_NOTES = (
+    "残す音は、空いているテスト用の ID（1026 以降）に保存する。基準音 1025 には上書きしない。"
+    "保存先の ID を声に出して確かめ、docs/safety.md の「テスト用の領域」の表に追記する"
+    "（本文 5-2〜5-4）",
+    "残さないときは、Exit で「保存しますか」に No を選ぶ（本文 5-3）",
+)
+
+
+def _with_unit(value: str | float | int, param: ParameterDef | None) -> str:
+    if param is None or isinstance(value, str):
+        return str(value)
+    text = f"{value:g} {param.unit}" if param.unit else f"{value:g}"
+    if not param.step and not param.grid() and value not in (0, param.min, param.max):
+        # 刻みを確かめていない項目は、本体で選べる値に丸められない（端と 0 は選べる）
+        text += "（本体で選べるいちばん近い値）"
+    return text
+
+
+class Pc3a8Adapter:
+    synth_id = "pc3a8"
+
+    def __init__(
+        self, parameter_dir: Path | None = None, calibration_dir: Path | None = None
+    ) -> None:
+        self._parameter_dir = parameter_dir
+        self._calibration_dir = calibration_dir
+
+    def capabilities(self) -> Capabilities:
+        return Capabilities(
+            synth_id=self.synth_id,
+            display_name="Kurzweil PC3A8 (OS 2.41)",
+            # "The PC3A does not load samples"（本文 E-1）
+            user_sample_import=CapabilityStatus.UNSUPPORTED,
+            midi_notes=CapabilityStatus.SUPPORTED,  # 5 ピン MIDI で確認（docs/pc3a8_setup.md）
+            # SysEx の形式が公開されていない（本文 A-1）。このツールは SysEx を送らない
+            parameter_read=CapabilityStatus.UNVERIFIED,
+            parameter_write=CapabilityStatus.UNVERIFIED,
+            adjustment_suggestions=CapabilityStatus.SUPPORTED,  # 実機を操作しない提案のみ
+            available_engines=(ENGINE,),
+        )
+
+    def _table(self) -> ParameterTable | None:
+        return load_table(self._parameter_dir, ENGINE)
+
+    def _calibrations(self) -> CalibrationSet:
+        return CalibrationSet.load(self._calibration_dir, self.synth_id)
+
+    def create_recipe(self, spec: SoundSpec) -> PatchRecipe:
+        table = self._table()
+        rendered = render_steps(
+            subtractive_intents(spec),
+            table,
+            self._calibrations(),
+            spec.pitch.f0_hz if spec.pitch else None,
+            initial_value=_initial_value,
+        )
+        ordered = sorted(rendered.steps, key=_page_rank)
+        steps = tuple(s.model_copy(update={"order": i}) for i, s in enumerate(ordered, 1))
+
+        uncertainties: list[str] = []
+        if table is None:
+            uncertainties.append(
+                f"{ENGINE} のパラメータ表が見つからないため、具体的なパラメータ手順は保留。"
+                "次の項目を設定する:"
+            )
+        elif rendered.unregistered:
+            uncertainties.append(
+                f"基準音の配置（{_blocks(table.layout)}）に対応する項目がないため、"
+                "次の項目は手順にしていない:"
+            )
+        uncertainties += [f"  - {describe_intent(i)}" for i in rendered.unregistered]
+        uncertainties += rendered.uncertainties
+        if table is not None:
+            wave = table.by_role(Role.OSCILLATOR_WAVEFORM)
+            if wave is not None and all(s.parameter_id != wave.id for s in steps):
+                uncertainties.append(f"波形は基準音の {wave.base_value} のままにする")
+            uncertainties.append(
+                "ブロック 2 の LOPASS（1 ブロック）にはレゾナンスの項目がないため、"
+                "レゾナンスは設定しない（本文 6-24）"
+            )
+        top = max(spec.hypotheses, key=lambda h: h.confidence, default=None)
+        if top is not None and top.method is SynthesisMethod.SAMPLE_BASED:
+            uncertainties.append(
+                "参照音はサンプルの再生が向いている可能性があるが、PC3A8 はユーザーサンプルを"
+                "読み込めない（本文 E-1）。KVA の減算合成で近似する"
+            )
+        uncertainties += [f"参照音: {u}" for u in spec.uncertainties]
+
+        rationale = "KVA の発振器・フィルター・AMPENV・ENV2 で減算合成する"
+        if table is not None:
+            rationale = (
+                f"基準音 {table.layout.program}（{_blocks(table.layout)}）から、"
+                "発振器・LOPASS・ENV2・AMPENV を変えて減算合成する"
+            )
+        return PatchRecipe(
+            recipe_id=f"{spec.spec_id}-{self.synth_id}-{ENGINE.lower()}",
+            sound_spec_id=spec.spec_id,
+            synth_id=self.synth_id,
+            engine=ENGINE,
+            rationale=rationale,
+            steps=steps,
+            uncertainties=tuple(uncertainties),
+        )
+
+    def suggest_adjustments(
+        self,
+        spec: SoundSpec,
+        differences: tuple[Difference, ...],
+        recipe: PatchRecipe | None,
+    ) -> tuple[AdjustmentSuggestion, ...]:
+        return suggest_adjustments(spec, differences, recipe, self._table(), self._calibrations())
+
+    @staticmethod
+    def _info(param: ParameterDef) -> ParameterInfo:
+        feature = next(
+            (CALIBRATION_FEATURES[Role(r)] for r in param.roles if Role(r) in CALIBRATION_FEATURES),
+            None,
+        )
+        return ParameterInfo(
+            parameter_id=param.id,
+            label=f"{param.location} › {param.name}",
+            min=param.min,
+            max=param.max,
+            is_numeric=not param.is_choice,
+            calibration_feature=feature,
+            source_ref=param.source_ref,
+        )
+
+    def parameter_info(self, parameter_id: str) -> ParameterInfo | None:
+        table = self._table()
+        param = table.by_id(parameter_id) if table else None
+        return self._info(param) if param is not None else None
+
+    def calibratable_parameters(self) -> tuple[ParameterInfo, ...]:
+        table = self._table()
+        if table is None:
+            return ()
+        infos = (self._info(p) for p in table.parameters if p.usable)
+        return tuple(i for i in infos if i.is_numeric and i.calibration_feature)
+
+    def manual_instructions(self, recipe: PatchRecipe) -> str:
+        table = self._table()
+        lines = [
+            f"# PC3A8 レシピ: {recipe.recipe_id}",
+            "",
+            f"- エンジン: **{recipe.engine or ENGINE}**（V.A.S.T. の KVA 発振器）",
+            f"- 理由: {recipe.rationale}",
+            "- このツールは本体の設定を変えない。次の手順を本体の Program Editor で行う",
+            "",
+            "## 準備",
+            "",
+        ]
+        lines += [f"1. {p}" for p in _preparation(table.layout if table else None)]
+        if recipe.steps:
+            lines += [
+                "",
+                "## 手順",
+                "",
+                "ページ（ソフトボタン）の順に設定する。"
+                "ボタンが見当たらなければ **more** で切り替える（本文 6-12）。"
+                "DSPCTL・DSPMOD は左の列で機能を選び、▶ でサブページに移る"
+                "（本文 6-29〜6-31）",
+                "",
+            ]
+            for s in recipe.steps:
+                param = table.by_id(s.parameter_id) if table and s.parameter_id else None
+                if s.value is not None:
+                    setting = f" → **{_with_unit(s.value, param)}**"
+                elif s.target is not None:
+                    setting = f" → 目標 {describe_target(s.target)} に合わせて調整"
+                else:
+                    setting = ""
+                check = "" if s.status is StepStatus.VERIFIED else " ⚠ 資料で要確認"
+                lines.append(f"{s.order}. **{s.page}** › {s.parameter}{setting}")
+                lines.append(f"   - 理由: {s.reason}")
+                lines.append(f"   - 出典: {s.source_ref or '—'}{check}")
+        lines += ["", "## 保存", ""]
+        lines += [f"- {n}" for n in SAVE_NOTES]
+        if recipe.uncertainties:
+            lines += ["", "## 未確定事項・注意", ""]
+            lines += [u if u.startswith("  - ") else f"- {u}" for u in recipe.uncertainties]
+        return "\n".join(lines) + "\n"

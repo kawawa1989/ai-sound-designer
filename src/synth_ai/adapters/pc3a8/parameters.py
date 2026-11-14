@@ -9,8 +9,7 @@ KRONOS の表（adapters/kronos2/parameters.py）との違い:
   表は基準音（layout）の配置を前提にする
 - 実機で確かめていない項目は verified: false にし、範囲が分からなければ min / max を空にできる
 
-役割（roles）と選択肢タグの名前は、機種によらない概念について KRONOS の表と同じ文字列を使う。
-語彙を共通の場所に移すかどうかは Issue #20 で決める。
+役割（roles）と選択肢タグは、機種共通の語彙（synth_ai.core.planning.roles）から選ぶ。
 """
 
 from __future__ import annotations
@@ -21,34 +20,11 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-# 表に書ける役割。KRONOS の Role と同じ値（共通化は #20）
-ROLES: frozenset[str] = frozenset(
-    {
-        "oscillator_waveform",
-        "filter_type",
-        "filter_cutoff",
-        "filter_resonance",
-        "filter_eg_source",
-        "filter_eg_intensity",
-        "filter_eg_attack_level",
-        "filter_eg_attack",
-        "filter_eg_decay",
-        "filter_eg_sustain",
-        "filter_eg_release",
-        "amp_eg_attack_level",
-        "amp_eg_attack",
-        "amp_eg_decay",
-        "amp_eg_sustain",
-        "amp_eg_release",
-        "noise_level",
-    }
-)
+from synth_ai.core.planning.roles import ChoiceTag, Role
 
-# 選択肢に付けるタグ。KRONOS の ChoiceTag と同じ値
-CHOICE_TAGS: frozenset[str] = frozenset(
-    {"saw", "square", "pulse", "triangle", "sine", "noise", "lowpass", "highpass", "bandpass"}
-    | {"filter_eg"}
-)
+# 表に書ける役割と選択肢のタグ（機種共通の語彙）
+ROLES: frozenset[str] = frozenset(r.value for r in Role)
+CHOICE_TAGS: frozenset[str] = frozenset(t.value for t in ChoiceTag)
 
 
 class ParameterKind(StrEnum):

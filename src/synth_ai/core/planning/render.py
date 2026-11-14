@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from synth_ai.core.audio.notes import hz_to_note, note_to_hz
@@ -26,6 +27,7 @@ class RenderResult:
     uncertainties: list[str] = field(default_factory=list)
     unregistered: list[Intent] = field(default_factory=list)
     uncalibrated: int = 0
+    estimated: int = 0  # 曲線がなく、目標の値を換算して初期値にした項目
 
 
 # 基音に対する比で表す特徴。音程が変わると、同じ値でも必要なパラメータ値が変わる
@@ -108,8 +110,13 @@ def render_steps(
     table: RecipeTable[P] | None,
     calibrations: CalibrationSet,
     f0_hz: float | None = None,
+    initial_value: Callable[[P, QuantTarget], float | None] | None = None,
 ) -> RenderResult:
-    """f0_hz は参照音の基音（音程の補正に使う）。"""
+    """f0_hz は参照音の基音（音程の補正に使う）。
+
+    initial_value は、キャリブレーション曲線がないときに、目標の値をパラメータの単位に
+    換算する関数（例: ms の目標を秒の項目に）。換算できなければ None を返す。
+    """
     result = RenderResult()
     for intent in intents:
         param = table.by_role(intent.role) if table else None
@@ -158,6 +165,13 @@ def render_steps(
                     reason += "（キャリブレーション表から算出）"
                 if shift:
                     reason += shift.describe()
+            elif (
+                initial_value is not None
+                and (guess := initial_value(param, intent.target)) is not None
+            ):
+                value = param.clamp(guess)
+                reason += "（キャリブレーション未測定のため、目標の値を換算した初期値）"
+                result.estimated += 1
             else:
                 result.uncalibrated += 1
 
@@ -178,6 +192,12 @@ def render_steps(
             )
         )
 
+    if result.estimated:
+        result.uncertainties.append(
+            f"{result.estimated} 項目は、キャリブレーション未測定のため"
+            "目標の値を換算して初期値にした。"
+            "解析での測り方と本体の値の意味は同じではないので、録音して確かめる"
+        )
     if result.uncalibrated:
         result.uncertainties.append(
             f"{result.uncalibrated} 項目はキャリブレーション未測定のため値を決めていない。"

@@ -1,0 +1,473 @@
+{
+  "schema_version": "1.0",
+  "synth_id": "pc3a8",
+  "engine": "KVA",
+  "source": {
+    "document": "Kurzweil PC3A Musician's Guide",
+    "version": "V3（©2014 Young Chang）。manuals/pc3a8/",
+    "notes": "Chapter 6 Program Mode を中心に、基準音の配置で使う項目だけを抜き出した。ページ名は Program Editor のソフトボタン名。マニュアルにない値は実機の画面で読み、source_ref に日付を書いた"
+  },
+  "layout": {
+    "program": "1025 KVA BASIC SAW",
+    "keymap": "999 Silence",
+    "algorithm": 1,
+    "blocks": [
+      "SAW",
+      "LOPASS",
+      "NONE"
+    ],
+    "notes": "docs/safety.md の「基準音 1025 の設定」。Algorithm 1 はブロック 1 が 2 スロット、ブロック 2・3 が 1 スロット（本文 6-22〜6-23）"
+  },
+  "parameters": [
+    {
+      "id": "kva.alg.block1",
+      "page": "ALG",
+      "section": "ブロック 1（2 スロット）",
+      "name": "Oscillator",
+      "kind": "choice",
+      "choices": [
+        {
+          "value": "SAW",
+          "tags": [
+            "saw"
+          ]
+        },
+        {
+          "value": "SQUARE",
+          "tags": [
+            "square"
+          ]
+        },
+        {
+          "value": "SINE",
+          "tags": [
+            "sine"
+          ]
+        },
+        {
+          "value": "SINE+"
+        },
+        {
+          "value": "RES NOISE",
+          "tags": [
+            "noise"
+          ]
+        },
+        {
+          "value": "SHAPED SAW"
+        },
+        {
+          "value": "PWM",
+          "tags": [
+            "pulse"
+          ]
+        }
+      ],
+      "base_value": "SAW",
+      "roles": [
+        "oscillator_waveform"
+      ],
+      "source_ref": "Musician's Guide 本文 6-54〜6-58／実機の画面で確認（2026-11-14）（ブロック 1 の一覧）",
+      "notes": "ブロック 1（2 スロット）で選べる機能のうち、発振器だけを載せた。SAW・SQUARE・SINE・SINE+・RES NOISE はエイリアスなし、SHAPED SAW・PWM はエイリアスあり（本文 6-54）。PWM はここでは 2 ブロック版で、PWM Wid 50 で矩形波（本文 6-57）。同じ一覧には発振器以外（2POLE LOWPASS、2POLE HIPASS、BANDPASS、NOTCH、LOW SHELF、HIGH SHELF、PARA MID、2POLE ALLPASS、2 PARAM SHAPER、QUANTIZE、NONE）もある。三角波（TRI）は一覧になく、この配置では使えない",
+      "verified": true
+    },
+    {
+      "id": "kva.alg.block2",
+      "page": "ALG",
+      "section": "ブロック 2（1 スロット）",
+      "name": "Filter",
+      "kind": "choice",
+      "choices": [
+        {
+          "value": "NONE"
+        },
+        {
+          "value": "LOPASS",
+          "tags": [
+            "lowpass"
+          ]
+        }
+      ],
+      "default": "NONE",
+      "base_value": "LOPASS",
+      "roles": [
+        "filter_type"
+      ],
+      "source_ref": "Musician's Guide 本文 6-55〜6-56／実機の画面で確認（2026-11-14）（LOPASS が選べる）",
+      "notes": "1 スロットのブロックに置けるフィルターのうち、確かめたのは LOPASS だけ。1 ブロックの LOPASS には LP Res（レゾナンス）がない（2 ブロックの Lopass にはある。本文 6-24）",
+      "verified": true
+    },
+    {
+      "id": "kva.dspctl.lp_frq",
+      "page": "DSPCTL",
+      "section": "LOPASS",
+      "name": "LP Frq",
+      "kind": "float",
+      "max": 25088,
+      "base_value": 25088,
+      "unit": "Hz",
+      "roles": [
+        "filter_cutoff"
+      ],
+      "verified": true,
+      "source_ref": "Musician's Guide 本文 6-55〜6-56／実機の画面で確認（2026-11-14）（最小 C 0 16Hz、最大 G 10 25088Hz、1 クリック下は F#10 23680Hz）",
+      "notes": "カットオフ周波数。表示は音名と Hz。1 クリックで半音（25088 → 23680 Hz）。KeyTrk・VelTrk はセント単位（VelTrk 最大 10800 ct、本文 6-56）",
+      "min": 16,
+      "steps_per_octave": 12
+    },
+    {
+      "id": "kva.dspctl.saw_pch",
+      "page": "DSPCTL",
+      "section": "SAW",
+      "name": "Saw Pch",
+      "kind": "float",
+      "base_value": 0,
+      "unit": "ST",
+      "verified": true,
+      "source_ref": "Musician's Guide 本文 6-53〜6-54／実機の画面で確認（2026-11-14）（−120〜60 ST、KeyTrk 100 ct/key）",
+      "notes": "KVA の音程（Keymap の Pitch は KVA に効かない）",
+      "min": -120,
+      "max": 60
+    },
+    {
+      "id": "kva.dspctl.level",
+      "page": "DSPCTL",
+      "section": "AMP",
+      "name": "Level",
+      "kind": "float",
+      "min": -96,
+      "max": 24,
+      "default": -6,
+      "base_value": -6,
+      "unit": "dB",
+      "source_ref": "Musician's Guide 本文 6-29",
+      "verified": true
+    },
+    {
+      "id": "kva.dspctl.level_veltrk",
+      "page": "DSPCTL",
+      "section": "AMP（Level の右側）",
+      "name": "VelTrk",
+      "kind": "float",
+      "min": -96,
+      "max": 96,
+      "default": 35,
+      "base_value": 0,
+      "unit": "dB",
+      "source_ref": "Musician's Guide 本文 6-29／実機の画面で確認（2026-11-14）（999 で 35 dB）",
+      "notes": "ベロシティで音量を変える量。基準音では 0 dB にして、ベロシティで音量が変わらないようにしている",
+      "verified": true
+    },
+    {
+      "id": "kva.dspmod.lp_frq.src1",
+      "page": "DSPMOD",
+      "section": "LP Frq",
+      "name": "Src1",
+      "kind": "choice",
+      "choices": [
+        {
+          "value": "OFF"
+        },
+        {
+          "value": "ENV2",
+          "tags": [
+            "filter_eg"
+          ]
+        }
+      ],
+      "default": "OFF",
+      "base_value": "OFF",
+      "roles": [
+        "filter_eg_source"
+      ],
+      "verified": true,
+      "source_ref": "Musician's Guide 本文 6-25〜6-26, 6-30〜6-31, 6-44／実機の画面で確認（2026-11-14）（一覧に ENV2 がある）",
+      "notes": "LP Frq を動かす制御元。ENV2 を割り当てるとフィルターのエンベロープになる"
+    },
+    {
+      "id": "kva.dspmod.lp_frq.depth",
+      "page": "DSPMOD",
+      "section": "LP Frq",
+      "name": "Depth",
+      "kind": "float",
+      "max": 10800,
+      "unit": "ct",
+      "roles": [
+        "filter_eg_intensity"
+      ],
+      "verified": true,
+      "source_ref": "Musician's Guide 本文 6-25, 6-56／実機の画面で確認（2026-11-14）（−10800〜10800 ct）",
+      "notes": "Src1 が最大のときに LP Frq を動かす量（セント）。1200 ct で 1 オクターブ",
+      "min": -10800
+    },
+    {
+      "id": "kva.ampenv.mode",
+      "page": "AMPENV",
+      "name": "Mode",
+      "kind": "choice",
+      "choices": [
+        {
+          "value": "Natural"
+        },
+        {
+          "value": "User"
+        }
+      ],
+      "default": "Natural",
+      "base_value": "User",
+      "source_ref": "Musician's Guide 本文 6-42／実機の画面で確認（2026-11-14）",
+      "verified": true
+    },
+    {
+      "id": "kva.ampenv.att1.time",
+      "page": "AMPENV",
+      "section": "Att1",
+      "name": "Time",
+      "kind": "float",
+      "min": 0,
+      "max": 60,
+      "base_value": 0,
+      "unit": "s",
+      "roles": [
+        "amp_eg_attack"
+      ],
+      "source_ref": "Musician's Guide 本文 6-43／実機の画面で確認（2026-11-14）（刻み）",
+      "notes": "AMPENV のアタックは指数カーブ（本文 6-44）。時間の刻みは一定でない: 0, 0.002, 0.005, 0.01, 0.02 のあと、2.00 までは 0.02、5.00 までは 0.04、10.0 までは 0.10、それ以上は 0.5 刻み（Att1 で 15.0 まで確認、2026-11-14）。15 秒より上は要確認",
+      "verified": true,
+      "values": [
+        0,
+        0.002,
+        0.005,
+        0.01
+      ],
+      "step_ranges": [
+        {
+          "start": 0.02,
+          "end": 2.0,
+          "step": 0.02
+        },
+        {
+          "start": 2.0,
+          "end": 5.0,
+          "step": 0.04
+        },
+        {
+          "start": 5.0,
+          "end": 10.0,
+          "step": 0.1
+        },
+        {
+          "start": 10.0,
+          "end": 15.0,
+          "step": 0.5
+        }
+      ]
+    },
+    {
+      "id": "kva.ampenv.att1.level",
+      "page": "AMPENV",
+      "section": "Att1",
+      "name": "Level",
+      "kind": "float",
+      "min": 0,
+      "max": 100,
+      "base_value": 100,
+      "unit": "%",
+      "roles": [
+        "amp_eg_attack_level"
+      ],
+      "source_ref": "Musician's Guide 本文 6-43",
+      "verified": true
+    },
+    {
+      "id": "kva.ampenv.decay.time",
+      "page": "AMPENV",
+      "section": "Dec1",
+      "name": "Time",
+      "kind": "float",
+      "min": 0,
+      "max": 60,
+      "base_value": 0.1,
+      "unit": "s",
+      "roles": [
+        "amp_eg_decay"
+      ],
+      "source_ref": "Musician's Guide 本文 6-43",
+      "verified": true,
+      "notes": "刻みは Att1 と同じと思われるが、この項目では要確認"
+    },
+    {
+      "id": "kva.ampenv.decay.level",
+      "page": "AMPENV",
+      "section": "Dec1",
+      "name": "Level",
+      "kind": "float",
+      "min": 0,
+      "max": 100,
+      "base_value": 75,
+      "unit": "%",
+      "roles": [
+        "amp_eg_sustain"
+      ],
+      "source_ref": "Musician's Guide 本文 6-43",
+      "notes": "0 でなければサステインになる。基準音の 75% は −7.9 dB と測れた（振幅の比なら −2.5 dB）。dB との対応は #22 で測る",
+      "verified": true
+    },
+    {
+      "id": "kva.ampenv.rel1.time",
+      "page": "AMPENV",
+      "section": "Rel1",
+      "name": "Time",
+      "kind": "float",
+      "min": 0,
+      "max": 60,
+      "base_value": 0.06,
+      "unit": "s",
+      "roles": [
+        "amp_eg_release"
+      ],
+      "source_ref": "Musician's Guide 本文 6-43／実機の画面で確認（2026-11-14）（0.05 付近は 0.02 s 刻み）",
+      "notes": "刻みは Att1 と同じ表を使う。Rel1 で確かめたのは 0.05 付近が 0.02 刻みであることだけ（予定の 0.05 にできず 0.06 にした）。時間の刻みは一定でない: 0, 0.002, 0.005, 0.01, 0.02 のあと、2.00 までは 0.02、5.00 までは 0.04、10.0 までは 0.10、それ以上は 0.5 刻み（Att1 で 15.0 まで確認、2026-11-14）。15 秒より上は要確認",
+      "verified": true,
+      "values": [
+        0,
+        0.002,
+        0.005,
+        0.01
+      ],
+      "step_ranges": [
+        {
+          "start": 0.02,
+          "end": 2.0,
+          "step": 0.02
+        },
+        {
+          "start": 2.0,
+          "end": 5.0,
+          "step": 0.04
+        },
+        {
+          "start": 5.0,
+          "end": 10.0,
+          "step": 0.1
+        },
+        {
+          "start": 10.0,
+          "end": 15.0,
+          "step": 0.5
+        }
+      ]
+    },
+    {
+      "id": "kva.ampenv.rel1.level",
+      "page": "AMPENV",
+      "section": "Rel1",
+      "name": "Level",
+      "kind": "float",
+      "min": 0,
+      "max": 150,
+      "base_value": 0,
+      "unit": "%",
+      "source_ref": "Musician's Guide 本文 6-43〜6-44",
+      "verified": true
+    },
+    {
+      "id": "kva.env2.att1.time",
+      "page": "ENV2",
+      "section": "Att1",
+      "name": "Time",
+      "kind": "float",
+      "min": 0,
+      "max": 60,
+      "unit": "s",
+      "roles": [
+        "filter_eg_attack"
+      ],
+      "source_ref": "Musician's Guide 本文 6-43〜6-45",
+      "notes": "ENV2 の画面は AMPENV とほぼ同じで、違いは Rel3 と Rel1・Rel2 の範囲（±100%）だけ（本文 6-45）。アタックは直線（本文 6-44） 刻みは Att1 と同じと思われるが、この項目では要確認",
+      "verified": true
+    },
+    {
+      "id": "kva.env2.att1.level",
+      "page": "ENV2",
+      "section": "Att1",
+      "name": "Level",
+      "kind": "float",
+      "unit": "%",
+      "roles": [
+        "filter_eg_attack_level"
+      ],
+      "verified": true,
+      "source_ref": "Musician's Guide 本文 6-44〜6-45／実機の画面で確認（2026-11-14）（−100〜100%）",
+      "notes": "ENV2 は負の値を取れる（本文 6-44）",
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "kva.env2.decay.time",
+      "page": "ENV2",
+      "section": "Dec1",
+      "name": "Time",
+      "kind": "float",
+      "min": 0,
+      "max": 60,
+      "unit": "s",
+      "roles": [
+        "filter_eg_decay"
+      ],
+      "source_ref": "Musician's Guide 本文 6-43〜6-45",
+      "verified": true,
+      "notes": "刻みは Att1 と同じと思われるが、この項目では要確認"
+    },
+    {
+      "id": "kva.env2.decay.level",
+      "page": "ENV2",
+      "section": "Dec1",
+      "name": "Level",
+      "kind": "float",
+      "unit": "%",
+      "roles": [
+        "filter_eg_sustain"
+      ],
+      "verified": true,
+      "source_ref": "Musician's Guide 本文 6-44〜6-45／実機の画面で確認（2026-11-14）（−100〜100%）",
+      "notes": "ENV2 は負の値を取れる（本文 6-44）",
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "kva.env2.rel1.time",
+      "page": "ENV2",
+      "section": "Rel1",
+      "name": "Time",
+      "kind": "float",
+      "min": 0,
+      "max": 60,
+      "unit": "s",
+      "roles": [
+        "filter_eg_release"
+      ],
+      "source_ref": "Musician's Guide 本文 6-43〜6-45",
+      "verified": true,
+      "notes": "刻みは Att1 と同じと思われるが、この項目では要確認"
+    },
+    {
+      "id": "kva.common.monophonic",
+      "page": "COMMON",
+      "name": "Monophonic",
+      "kind": "choice",
+      "choices": [
+        {
+          "value": "Off"
+        },
+        {
+          "value": "On"
+        }
+      ],
+      "default": "Off",
+      "base_value": "Off",
+      "source_ref": "Musician's Guide 本文 6-35",
+      "verified": true
+    }
+  ]
+}

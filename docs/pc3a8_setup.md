@@ -85,6 +85,23 @@ uv run synth-ai devices -s pc3a8
   左右の相関が 0.28 と低く `wide_stereo` の注意が出た。選んでいた Program のエフェクト（コーラス・リバーブなど）か
   ステレオ音源によるものと考えられる。比較用の録音は、テスト用の Program（#18）でエフェクトを切って行う
 
+### マスターエフェクト（Effect モード）
+
+Program モードの音には、Effect モードのマスターエフェクト（コンプレッサーと EQ）が掛かる（本文 9-8）。
+2026-11-14 に読み取った状態（変更はしていない）:
+
+| 項目 | 値 | 測定への影響 |
+| --- | --- | --- |
+| Master FX | Master FX Enabled（Order: Compressor ⇒ EQ） | |
+| Master Cmpr. | **In/Out: Out**（Ratio 3.0:1、Threshold −28.0 dB、MakeUp 0.0 dB、Atk 0.0 ms、Rel 100 ms。3 帯域とも同じ） | Out なので掛かっていない |
+| Master EQ | In/Out: In。Bass / Treb / Mid1〜3 の Gain と OutGain がすべて 0.0 dB | 素通し |
+| AUXFX1 / AUXFX2 | Override: No | Program 側のエフェクト設定がそのまま使われる |
+
+- 今の状態では、マスターエフェクトは音を変えない。このため Master FX は Enabled のまま測る
+- **コンプレッサーを In にすると、−28 dB を超える音が 3:1 で圧縮され、音量とエンベロープの測定がずれる**。
+  キャリブレーションの前に Out のままか確かめる
+- Effect モードの設定は、マスターテーブルを保存すると電源を切っても残る（本文 9-4）
+
 ### 経路の違い（USB と 5 ピン）
 
 このツールは Note On/Off・All Notes Off しか送らないので、どちらでも同じように動く。違いは次のとおり。

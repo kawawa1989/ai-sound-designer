@@ -35,6 +35,9 @@ CALIBRATION_DIRS: dict[str, Path] = {
     "pc3a8": DATA_DIR / "pc3a8_calibration",
 }
 
+# 機種ごとに送ってよい CC 番号（docs/safety.md「CC を送る条件」。calibrate の CC モードだけで使う）
+ALLOWED_CONTROLS: dict[str, frozenset[int]] = {"pc3a8": frozenset({14, 15})}
+
 ADAPTER_FACTORIES: dict[str, Callable[[], SynthAdapter]] = {
     "fake": FakeSynthAdapter,
     "kronos2": _kronos2,

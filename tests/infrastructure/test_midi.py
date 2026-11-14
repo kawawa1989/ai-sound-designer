@@ -76,3 +76,42 @@ def test_open_sender_closes_port(monkeypatch: pytest.MonkeyPatch) -> None:
         raise RuntimeError("boom")
     assert port.closed
     assert kinds(port) == ["note_on", "note_off", "control_change"]
+
+
+def test_allowed_controls_only() -> None:
+    """許可した CC 番号だけを送り、閉じるときに 0 に戻す（docs/safety.md「CC を送る条件」）。"""
+    port = FakePort()
+    sender = NoteSender(port, 1, allowed_controls=frozenset({14, 15}))
+    sender.control_change(14, 64)
+    sender.control_change(15, 0)
+    for control in (7, 13, 0):
+        with pytest.raises(MidiError, match="許可していない"):
+            sender.control_change(control, 10)
+    with pytest.raises(MidiError):
+        sender.control_change(14, 128)
+    with pytest.raises(MidiError):
+        sender.control_change(midi.ALL_NOTES_OFF, 1)
+    sender.reset_controls()
+    assert [(m.control, m.value) for m in port.messages] == [(14, 64), (15, 0), (14, 0)]
+    # 許可していなければ、CC 14 も送れない
+    with pytest.raises(MidiError):
+        NoteSender(FakePort(), 1).control_change(14, 1)
+
+
+@pytest.mark.parametrize("control", [0, 6, 7, 32, 38, 98, 101, 120, 121, 127, 128])
+def test_unsafe_controls_cannot_be_allowed(control: int) -> None:
+    with pytest.raises(MidiError, match="送れません"):
+        NoteSender(FakePort(), 1, allowed_controls=frozenset({control}))
+
+
+def test_open_sender_resets_controls(monkeypatch: pytest.MonkeyPatch) -> None:
+    port = FakePort()
+    monkeypatch.setattr("mido.get_output_names", lambda: ["UR22mkII"])
+    monkeypatch.setattr("mido.open_output", lambda name: port)
+    with pytest.raises(RuntimeError), midi.open_sender("UR22", 1, frozenset({14})) as sender:
+        sender.control_change(14, 100)
+        raise RuntimeError("中断")
+    assert [
+        (m.type, getattr(m, "control", None), getattr(m, "value", None)) for m in port.messages
+    ][-1] == ("control_change", 14, 0)
+    assert port.closed

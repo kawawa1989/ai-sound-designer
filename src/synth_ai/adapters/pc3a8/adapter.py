@@ -294,6 +294,7 @@ class Pc3a8Adapter:
             unit=param.unit,
             calibration_values=param.calibration_values,
             log_scale=param.unit == "Hz",
+            cc_control=param.cc_calibration,
         )
 
     def parameter_info(self, parameter_id: str) -> ParameterInfo | None:

@@ -38,7 +38,7 @@ Python は 3.12 固定（uv 管理）。システムの python3 は使わない�
 
 ## 禁止事項（実機の安全）
 
-詳細は `docs/safety.md`。ノートの送信は `infrastructure/midi/sender.py` で Note On/Off と All Notes Off に制限している。
+詳細は `docs/safety.md`。ノートの送信は `infrastructure/midi/sender.py` で Note On/Off と All Notes Off（と、許可した CC 番号）に制限している。
 実機に音を出すコマンド（midi-probe, capture, calibrate）と、実機の状態を読み書きするコマンド
 （SysEx を使うもの）は、ユーザーの指示なしに実行しない。
 
@@ -48,6 +48,7 @@ Python は 3.12 固定（uv 管理）。システムの python3 は使わない�
 - ツールから Global 設定を変えること、本体に保存（Write）すること、既存 Program を上書きすること。
   テスト用 Bank/Program 以外を触らない。
 - 公式資料で確認していない KRONOS / PC3A8 のパラメータ名・ページ名・値を生成しない。不明なら「要確認」とする。
-- PC3A8 に Note On/Off・All Notes Off 以外の MIDI（SysEx、Program Change など）を送ること。
+- PC3A8 に Note On/Off・All Notes Off と、`docs/safety.md`「CC を送る条件」の CC（14・15。calibrate の CC モードだけ）以外の
+  MIDI（SysEx、Program Change、ほかの CC など）を送ること。
 - PC3A8 の Master モードの Reset、Program 999（Default Program）・Setup 126（Internal Voices）の変更、
   `docs/safety.md` で決めたテスト用 ID 以外への保存。

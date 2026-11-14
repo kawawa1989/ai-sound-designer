@@ -305,3 +305,19 @@ def test_env2_depth_from_cutoff_curve() -> None:
         s.parameter_id: s for s in Pc3a8Adapter(parameter_dir=TABLE_DIR).create_recipe(spec).steps
     }
     assert plain["kva.dspmod.lp_frq.depth"].value is None
+
+
+def test_cc_curves_are_not_used_for_recipes() -> None:
+    """CC で測った曲線（cc/）は比較用。レシピには data/pc3a8_calibration/ 直下の曲線だけを使う。"""
+    from synth_ai.core.calibration.models import CalibrationSet
+
+    directory = TABLE_DIR.parent / "pc3a8_calibration"
+    curves = CalibrationSet.load(directory, "pc3a8")
+    assert len(curves) == 5
+    lp = curves.get("kva.dspctl.lp_frq", "brightness_end")
+    assert lp is not None and "CC 14" not in lp.conditions
+    cc = CalibrationSet.load(directory / "cc", "pc3a8").get("kva.dspctl.lp_frq", "brightness_end")
+    assert cc is not None and "CC 14 で設定" in cc.conditions
+    # 手動の曲線と 2% 以内で合う（2026-11-14）
+    for p in cc.points:
+        assert p.feature_value == pytest.approx(lp.predict(p.parameter_value), rel=0.02)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
@@ -11,6 +12,7 @@ import typer
 from synth_ai import __version__
 
 if TYPE_CHECKING:
+    from synth_ai.adapters.base import CcControl
     from synth_ai.config import SynthConfig
     from synth_ai.core.calibration.session import CalibrationPlan, SessionResult
     from synth_ai.infrastructure.capture.recorder import CaptureSettings
@@ -383,12 +385,16 @@ def capture(
         compare(run_dir, out, known, plots=True)
 
 
+CC_SETTLE_S = 0.3  # CC を送ってから鳴らすまでの待ち時間
+
+
 def _record_calibration(
     cfg: SynthConfig,
     plan: CalibrationPlan,
     settings: CaptureSettings,
     manual: bool,
     session_dir: Path,
+    cc: tuple[CcControl, dict[float, int], frozenset[int]] | None = None,
 ) -> SessionResult:
     """値ごとに本体の操作を促し、MIDI で発音・録音・解析する対話ループ。"""
     from contextlib import nullcontext
@@ -415,8 +421,9 @@ def _record_calibration(
         cfg.capture.input_device, cfg.capture.sample_rate, cfg.capture.channels
     )
     use_midi = not manual and cfg.midi.output_port is not None
+    allowed = cc[2] if cc else frozenset()
     sender_ctx = (
-        open_sender(cfg.midi.output_port, cfg.midi.channel)  # type: ignore[arg-type]
+        open_sender(cfg.midi.output_port, cfg.midi.channel, allowed)  # type: ignore[arg-type]
         if use_midi
         else nullcontext(None)
     )
@@ -427,6 +434,17 @@ def _record_calibration(
     with sender_ctx as sender:
 
         def ask_to_set(index: int, value: float) -> Step:
+            if cc is not None:
+                control, ccs, _ = cc
+                assert sender is not None
+                sender.control_change(control.control, ccs[value])
+                typer.echo(
+                    f"[{index + 1}/{len(plan.values)}] CC {control.control} = {ccs[value]}"
+                    f"（{plan.parameter_label} ≈ {value:g}"
+                    f"{f' {plan.parameter_unit}' if plan.parameter_unit else ''}）"
+                )
+                time.sleep(CC_SETTLE_S)
+                return Step.GO
             answer = ask(
                 f"[{index + 1}/{len(plan.values)}] {plan.parameter_label} を"
                 f" {value:g}{f' {plan.parameter_unit}' if plan.parameter_unit else ''} にして"
@@ -445,6 +463,8 @@ def _record_calibration(
             typer.echo(f"  → {label}: {shown}")
             for issue in m.issues:
                 typer.secho(f"  注意: {issue.message}", fg=typer.colors.YELLOW)
+            if cc is not None:  # CC モードは確認せずに採用する（測れなかった値は使わない）
+                return Verdict.ACCEPT
             answer = ask("  Enter: 採用 / r: 録り直し / s: この値は使わない")
             return {"r": Verdict.RETRY, "s": Verdict.SKIP}.get(answer, Verdict.ACCEPT)
 
@@ -474,6 +494,13 @@ def calibrate(
     hold: Annotated[float | None, typer.Option(help="押さえる秒数")] = None,
     tail: Annotated[float | None, typer.Option(help="離した後に録音を続ける秒数")] = None,
     conditions: Annotated[str, typer.Option(help="測定条件のメモ（基準の音色など）")] = "",
+    cc: Annotated[
+        bool,
+        typer.Option(
+            "--cc",
+            help="値を手で変えず、CC を送って変える（docs/manuals/pc3a8/calibrate_cc.md）",
+        ),
+    ] = False,
     manual: Annotated[bool, typer.Option(help="MIDI を使わず手で弾く")] = False,
     overwrite: Annotated[bool, typer.Option(help="既存の曲線を確認なしで上書きする")] = False,
     from_recordings: Annotated[
@@ -556,6 +583,28 @@ def calibrate(
             ValueError(f"範囲 {info.min:g}〜{info.max:g} の外の値があります: {out_of_range}")
         )
 
+    cc_mode = None
+    if cc:
+        from synth_ai.registry import ALLOWED_CONTROLS
+
+        control = info.cc_control
+        allowed = ALLOWED_CONTROLS.get(adapter.synth_id, frozenset())
+        if control is None:
+            raise _fail(ValueError(f"{info.parameter_id} は CC で動かす設定がありません"))
+        if control.control not in allowed:
+            raise _fail(ValueError(f"CC {control.control} は {adapter.synth_id} に送れません"))
+        if manual or cfg.midi.output_port is None or from_recordings is not None:
+            raise _fail(ValueError("--cc は MIDI で鳴らすときだけ使えます"))
+        # 測る値に近い CC を選び、その CC での値（仮定した換算）を測る値にする
+        ccs = sorted({control.cc_for(v) for v in points})
+        by_value = {round(control.value_at(c), 4): c for c in ccs}
+        points = tuple(by_value)
+        cc_mode = (control, by_value, allowed)
+        conditions = (f"{conditions} / " if conditions else "") + (
+            f"{control.program} を CC {control.control} で設定"
+            f"（値 = {control.base:g} × 2^({control.depth_cents:g} ct × CC/127)、比例を仮定）"
+        )
+
     note_name = note or cfg.test_note.note
     hold_s = max(hold or cfg.test_note.hold_s, MIN_HOLD_S.get(target, 0.0))
     tail_s = max(
@@ -627,9 +676,18 @@ def calibrate(
             f"値: {', '.join(f'{v:g}' for v in points)}" + (f" {info.unit}" if info.unit else "")
         )
         typer.echo(f"条件: {plan.conditions}")
-        typer.echo("基準の音色を選び、このパラメータだけを変えてください。\n")
+        if cc_mode is not None:
+            control = cc_mode[0]
+            typer.echo(
+                f"CC {control.control} を送って値を変えます（docs/safety.md「CC を送る条件」）。"
+                "測り終えたら CC を 0 に戻します。"
+            )
+            if not typer.confirm(f"本体で {control.program} を選んでいますか？"):
+                raise _fail(ValueError(f"{control.program} を選んでから実行してください"))
+        else:
+            typer.echo("基準の音色を選び、このパラメータだけを変えてください。\n")
         try:
-            session = _record_calibration(cfg, plan, settings, manual, session_dir)
+            session = _record_calibration(cfg, plan, settings, manual, session_dir, cc_mode)
         except (CaptureError, MidiError, AudioLoadError) as exc:
             raise _fail(exc) from exc
 
@@ -653,6 +711,9 @@ def calibrate(
     out_dir = CALIBRATION_DIRS.get(
         adapter.synth_id, Path("data") / f"{adapter.synth_id}_calibration"
     )
+    if cc_mode is not None:
+        # 換算を確かめるまでは、手動の曲線と分けて保存する（レシピには使わない）
+        out_dir = out_dir / "cc"
     path = out_dir / curve_filename(info.parameter_id, target)
     if path.exists() and not overwrite and not typer.confirm(f"{path} を上書きしますか？"):
         alt = session_dir / path.name

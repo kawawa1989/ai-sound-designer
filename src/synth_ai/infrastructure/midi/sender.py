@@ -1,7 +1,11 @@
-"""MIDI のノート送信。送るのは Note On / Note Off / All Notes Off（CC 123）だけ。
+"""MIDI のノート送信。送るのは Note On / Note Off / All Notes Off（CC 123）と、許可した CC だけ。
 
-SysEx・プログラムチェンジ・その他のコントロールチェンジは送らない（実機の設定や音色を
+SysEx・プログラムチェンジ・許可していないコントロールチェンジは送らない（実機の設定や音色を
 書き換えないため）。例外や中断があっても、開いているノートは必ず止める。
+
+送ってよい CC 番号は、アプリケーション層（registry）が機種ごとに渡す（docs/safety.md）。
+バンク切り替え・音量・データ入力・チャンネルモードの番号は、渡されても送らない。
+送った CC は、閉じるときに 0 に戻す。
 """
 
 from __future__ import annotations
@@ -14,6 +18,8 @@ from typing import Protocol
 import mido
 
 ALL_NOTES_OFF = 123
+# 許可の一覧に入っていても送らない CC（Bank Select、Data Entry、Volume、RPN/NRPN、チャンネルモード）
+NEVER_SEND_CONTROLS = frozenset({0, 6, 7, 32, 38, 98, 99, 100, 101, *range(120, 128)})
 
 
 class MidiError(Exception):
@@ -48,19 +54,48 @@ class NoteSender:
 
     _ALLOWED = {"note_on", "note_off", "control_change"}
 
-    def __init__(self, port: MidiPort, channel: int) -> None:
+    def __init__(
+        self, port: MidiPort, channel: int, allowed_controls: frozenset[int] = frozenset()
+    ) -> None:
         if not 1 <= channel <= 16:
             raise MidiError(f"MIDI チャンネルは 1〜16: {channel}")
+        unsafe = sorted(
+            c for c in allowed_controls if c in NEVER_SEND_CONTROLS or not 0 <= c <= 127
+        )
+        if unsafe:
+            raise MidiError(f"この CC は送れません: {unsafe}")
         self._port = port
         self._channel = channel - 1
         self._sounding: set[int] = set()
+        self._controls = allowed_controls
+        self._changed: set[int] = set()  # 0 以外を送った CC（閉じるときに 0 に戻す）
 
     def _send(self, msg: mido.Message) -> None:
         if msg.type not in self._ALLOWED or (
-            msg.type == "control_change" and msg.control != ALL_NOTES_OFF
+            msg.type == "control_change"
+            and msg.control != ALL_NOTES_OFF
+            and msg.control not in self._controls
         ):
-            raise MidiError(f"許可していない MIDI メッセージです: {msg.type}")
+            detail = f" CC {msg.control}" if msg.type == "control_change" else ""
+            raise MidiError(f"許可していない MIDI メッセージです: {msg.type}{detail}")
         self._port.send(msg)
+
+    def control_change(self, control: int, value: int) -> None:
+        """許可した CC 番号に値を送る。"""
+        if control == ALL_NOTES_OFF or not 0 <= value <= 127:
+            raise MidiError(f"CC の番号・値が範囲外です: control={control} value={value}")
+        self._send(
+            mido.Message("control_change", control=control, value=value, channel=self._channel)
+        )
+        if value:
+            self._changed.add(control)
+        else:
+            self._changed.discard(control)
+
+    def reset_controls(self) -> None:
+        """送った CC を 0（効果なし）に戻す。"""
+        for control in sorted(self._changed):
+            self.control_change(control, 0)
 
     def note_on(self, note: int, velocity: int) -> None:
         if not (0 <= note <= 127 and 1 <= velocity <= 127):
@@ -91,17 +126,20 @@ class NoteSender:
 
 
 @contextmanager
-def open_sender(port_name: str, channel: int) -> Iterator[NoteSender]:
+def open_sender(
+    port_name: str, channel: int, allowed_controls: frozenset[int] = frozenset()
+) -> Iterator[NoteSender]:
     name = resolve_port_name(port_name, output_port_names())
     try:
         port = mido.open_output(name)
     except (OSError, ValueError) as exc:
         raise MidiError(f"MIDI 出力ポート「{name}」を開けません: {exc}") from exc
-    sender = NoteSender(port, channel)
+    sender = NoteSender(port, channel, allowed_controls)
     try:
         yield sender
     finally:
         try:
             sender.all_notes_off()
+            sender.reset_controls()
         finally:
             port.close()

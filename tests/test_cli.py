@@ -367,3 +367,68 @@ def test_calibrate_pc3a8_lists_units(tmp_path: Path) -> None:
     result = CliRunner().invoke(app, ["calibrate", "--config", str(config)])
     assert result.exit_code == 0, result.output
     assert "kva.dspctl.lp_frq  brightness_end  16〜25088 Hz" in result.output
+
+
+def test_calibrate_pc3a8_cc_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """CC モード: 値ごとに CC 14 を送って録音し、最後に 0 に戻す。曲線は cc/ に分けて保存する。"""
+    from synth_ai import registry
+    from synth_ai.core.calibration.models import CalibrationCurve
+    from synth_ai.core.synthesis.test_signals import saw_filter_sweep
+    from synth_ai.infrastructure.capture import recorder as rec_module
+    from tests.infrastructure.fakes import FakePort, FakeRecorder
+
+    port = FakePort()
+    cutoffs = iter([300.0, 1200.0, 6000.0])
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("mido.get_output_names", lambda: ["Steinberg UR22mkII Port1"])
+    monkeypatch.setattr("mido.open_output", lambda name: port)
+    monkeypatch.setattr(
+        rec_module,
+        "SoundDeviceRecorder",
+        lambda *a: FakeRecorder(
+            lambda: saw_filter_sweep(
+                f0=261.63, cutoff_start_hz=(c := next(cutoffs)), cutoff_end_hz=c
+            )
+        ),
+    )
+    monkeypatch.setitem(registry.CALIBRATION_DIRS, "pc3a8", tmp_path / "cal")
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    config = tmp_path / "local.yaml"
+    config.write_text(
+        "synth: pc3a8\nmidi:\n  output_port: UR22mkII\n"
+        "test_note:\n  hold_s: 0.01\n  release_tail_s: 0\n"
+        "capture:\n  pre_roll_s: 0\n"
+    )
+    args = ["calibrate", "kva.dspctl.lp_frq", "--cc", "--values", "262,1047,4186"]
+    result = CliRunner().invoke(app, [*args, "--config", str(config)], input="y\n")
+    assert result.exit_code == 0, result.output
+    assert "1026 KVA CC CAL を選んでいますか" in result.output
+    controls = [(m.control, m.value) for m in port.messages if m.type == "control_change"]
+    sent = [v for c, v in controls if c == 14]
+    assert sent[:3] == [34, 62, 91] and sent[-1] == 0  # 終わったら 0 に戻す
+    assert {c for c, _ in controls} <= {14, 123}
+    curve = CalibrationCurve.model_validate_json(
+        (tmp_path / "cal" / "cc" / "kva.dspctl.lp_frq__brightness_end.json").read_text()
+    )
+    assert curve.parameter_scale == "log" and len(curve.points) == 3
+    assert "CC 14 で設定" in curve.conditions
+    assert not (tmp_path / "cal" / "kva.dspctl.lp_frq__brightness_end.json").exists()
+
+
+def test_calibrate_cc_mode_requires_confirmation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.infrastructure.fakes import FakePort
+
+    port = FakePort()
+    monkeypatch.setattr("mido.get_output_names", lambda: ["UR22mkII"])
+    monkeypatch.setattr("mido.open_output", lambda name: port)
+    config = tmp_path / "local.yaml"
+    config.write_text("synth: pc3a8\nmidi:\n  output_port: UR22mkII\n")
+    args = ["calibrate", "kva.dspctl.lp_frq", "--cc", "--config", str(config)]
+    result = CliRunner().invoke(app, args, input="n\n")
+    assert result.exit_code == 2
+    assert port.messages == []  # 確かめるまで何も送らない
+    # CC の設定がないパラメータは CC モードで測れない
+    args = ["calibrate", "kva.ampenv.att1.time", "--cc", "--config", str(config)]
+    assert CliRunner().invoke(app, args).exit_code == 2

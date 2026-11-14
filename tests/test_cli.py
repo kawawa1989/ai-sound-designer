@@ -83,6 +83,14 @@ def test_compare_and_trial_commands(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     result = runner.invoke(app, ["trial", "list", str(out)])
     assert "[001]" in result.output and "近さ 4" in result.output and "近い" in result.output
+    assert "## kronos2（SoundSpec: " in result.output
+    # PC3A8 の試行は別の番号で、--synth で絞り込める
+    result = runner.invoke(app, ["compare", str(out), str(take), "-s", "pc3a8", "--no-plots"])
+    assert result.exit_code == 0 and "trials/pc3a8/001" in result.output
+    result = runner.invoke(app, ["trial", "list", str(out), "-s", "pc3a8"])
+    assert "## pc3a8" in result.output and "kronos2" not in result.output
+    note = ["trial", "note", str(out), "1", "-s", "pc3a8", "--memo", "pc"]
+    assert runner.invoke(app, note).exit_code == 0
     assert runner.invoke(app, ["trial", "note", str(out), "9", "--memo", "x"]).exit_code == 2
     assert runner.invoke(app, ["trial", "note", str(out), "1", "--closeness", "7"]).exit_code != 0
 

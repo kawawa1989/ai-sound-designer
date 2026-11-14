@@ -26,6 +26,7 @@ class TrialMeta(FrozenModel):
     recording_sha256: str
     synth_id: str | None = None
     recipe_id: str | None = None
+    sound_spec_id: str | None = None  # レシピのもとにした SoundSpec（機種をまたいで同じ）
 
 
 class TrialRecord(FrozenModel):
@@ -36,6 +37,7 @@ class TrialRecord(FrozenModel):
     synth_id: str | None
     recipe_id: str | None
     recording_source: str
+    sound_spec_id: str | None = None
     distance_db: float
     significant_differences: int
     top_differences: tuple[str, ...]

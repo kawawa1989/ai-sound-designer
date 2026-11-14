@@ -272,3 +272,36 @@ def test_project_curves_reproduce_base_sound() -> None:
     assert values["kva.dspctl.lp_frq"] == pytest.approx(25088, rel=0.02)
     sustain = values["kva.ampenv.decay.level"]
     assert isinstance(sustain, float | int) and abs(sustain - 75) < 2
+
+
+def test_env2_depth_from_cutoff_curve() -> None:
+    """ENV2 の Depth の初期値は、LP Frq の曲線で発音直後と終盤のカットオフの差（セント）。"""
+    from synth_ai.core.sound_spec.models import PitchTarget, QuantTarget, Speed, TimbreSpec
+
+    def target(feature: str, value: float, unit: str) -> QuantTarget:
+        return QuantTarget(feature=feature, value=value, unit=unit, tolerance=0.1, confidence=0.9)
+
+    spec = SoundSpec(
+        spec_id="bass",
+        reference_id="r",
+        pitch=PitchTarget(note="C4", f0_hz=261.63, confidence=0.9),
+        timbre=TimbreSpec(brightness_decay=Speed.MEDIUM),
+        targets=(
+            target("brightness_start", 7.589, "x f0"),  # 曲線で 4186 Hz
+            target("brightness_end", 3.304, "x f0"),  # 曲線で 523 Hz
+            target("brightness_change", 0.435, "ratio"),
+        ),
+    )
+    calibrated = Pc3a8Adapter(
+        parameter_dir=TABLE_DIR, calibration_dir=TABLE_DIR.parent / "pc3a8_calibration"
+    )
+    steps = {s.parameter_id: s for s in calibrated.create_recipe(spec).steps}
+    depth = steps["kva.dspmod.lp_frq.depth"].value
+    assert isinstance(depth, float | int)
+    assert depth == pytest.approx(3600, abs=30)  # 523 → 4186 Hz は 3 オクターブ
+    assert steps["kva.dspctl.lp_frq"].value == 523
+    # 曲線がなければ値は出さず、目標だけを示す
+    plain = {
+        s.parameter_id: s for s in Pc3a8Adapter(parameter_dir=TABLE_DIR).create_recipe(spec).steps
+    }
+    assert plain["kva.dspmod.lp_frq.depth"].value is None

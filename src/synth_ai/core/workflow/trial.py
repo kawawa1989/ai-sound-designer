@@ -141,8 +141,9 @@ def run_trial(
     if reference.analysis.source.sha256 != saved.source.sha256:
         raise ReferenceMismatchError(f"{ref_path} の内容が解析時と異なります")
 
-    trial = next_trial(run_dir)
-    out = trial_dir(run_dir, trial)
+    synth_id = adapter.synth_id if adapter else None
+    trial = next_trial(run_dir, synth_id)
+    out = trial_dir(run_dir, synth_id, trial)
     recording = analyze_file(recording_path, f"{saved.analysis_id}-trial-{trial:03d}")
 
     spec = load_or_derive_spec(run_dir)
@@ -154,12 +155,13 @@ def run_trial(
 
     pair = align(reference, recording)
     differences = tuple(compute_differences(pair, reference, recording))
-    previous = load_comparison(run_dir, trial - 1) if trial > 1 else None
+    # 前の試行との比較は、同じ機種の試行どうしで行う
+    previous = load_comparison(run_dir, synth_id, trial - 1) if trial > 1 else None
     comparison = Comparison(
         comparison_id=f"{saved.analysis_id}-trial-{trial:03d}",
         reference_analysis_id=saved.analysis_id,
         recording_analysis_id=recording.analysis.analysis_id,
-        synth_id=adapter.synth_id if adapter else None,
+        synth_id=synth_id,
         recipe_id=recipe.recipe_id if recipe else None,
         alignment=pair.alignment,
         differences=differences,
@@ -187,6 +189,7 @@ def run_trial(
             recording_sha256=recording.analysis.source.sha256,
             synth_id=comparison.synth_id,
             recipe_id=comparison.recipe_id,
+            sound_spec_id=spec.spec_id,
         ),
         out / "trial.json",
     )

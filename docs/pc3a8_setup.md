@@ -114,3 +114,12 @@ Program モードの音には、Effect モードのマスターエフェクト�
 | ファイル転送 | Storage モードの仮想ドライブで Mac に保存できる（本文 2-6）。その間は USB MIDI が止まる | できない（USB メモリを使う） |
 
 - 1 回目の `devices -s pc3a8` は、USB をつなぎ替えた直後に macOS の MIDI 初期化エラー（RtMidiError −304）で止まった。もう一度実行すると正常に動いた
+
+## 1 周の流れ（レシピ → 設定 → 録音 → 比較 → 改善）
+
+接続ができたら、次の順に進める。2026-11-14 に参照音 1 つで 1 周した記録は `docs/pc3a8_trial_report.md`。
+
+1. 参照音を解析する: `uv run synth-ai analyze <参照.wav> -o runs/<名前>`
+2. PC3A8 のレシピを作る: `uv run synth-ai recipe runs/<名前> -s pc3a8`
+3. 本体で設定し、録音・比較する: `docs/manuals/pc3a8/run_trial.md`
+4. 必要ならキャリブレーション曲線を測り直す: `docs/manuals/pc3a8/calibrate.md`

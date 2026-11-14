@@ -38,10 +38,13 @@ from synth_ai.core.sound_spec.models import (
     RecipeStep,
     SampleAlternative,
     SoundSpec,
+    StepAction,
     StepStatus,
 )
 
 ENGINE = "KVA"
+# 設定を確かめる提案に添える、本体での確かめ方
+VERIFY_MANUAL = "docs/manuals/pc3a8/run_trial.md の「確認」"
 
 # Program Editor で設定する順番（ページ名。本文 6-12 のソフトボタン）
 PAGE_ORDER = ("KEYMAP", "ALG", "DSPCTL", "DSPMOD", "ENV2", "AMPENV", "COMMON")
@@ -320,7 +323,16 @@ class Pc3a8Adapter:
         differences: tuple[Difference, ...],
         recipe: PatchRecipe | None,
     ) -> tuple[AdjustmentSuggestion, ...]:
-        return suggest_adjustments(spec, differences, recipe, self._table(), self._calibrations())
+        suggestions = suggest_adjustments(
+            spec, differences, recipe, self._table(), self._calibrations()
+        )
+        # 設定を確かめる提案には、本体での確かめ方（手順書）を添える
+        return tuple(
+            s.model_copy(update={"reason": f"{s.reason}。確かめ方: {VERIFY_MANUAL}"})
+            if s.action is StepAction.VERIFY
+            else s
+            for s in suggestions
+        )
 
     @staticmethod
     def _info(param: ParameterDef) -> ParameterInfo:

@@ -165,6 +165,82 @@ def test_adjustment_suggestion(analyze_signal: Analyze, adapter: Pc3a8Adapter) -
     assert suggestion.action is StepAction.INCREASE
 
 
+def fdiff(feature: str, ref: float, rec: float, severity: float, unit: str = "u") -> Difference:
+    return Difference(
+        feature=feature,
+        kind=DifferenceKind.FEATURE,
+        reference=ref,
+        recording=rec,
+        delta=rec - ref,
+        unit=unit,
+        severity=severity,
+        message=f"{feature} が違う",
+    )
+
+
+def test_static_filter_eg_asks_to_check_eg(analyze_signal: Analyze, adapter: Pc3a8Adapter) -> None:
+    """明るさが時間で変わらないとき、カットオフや Depth を動かす提案は出さない（#44、試行 002）。"""
+    spec = spec_for(analyze_signal, "bass")
+    recipe = adapter.create_recipe(spec)
+    diffs = (
+        fdiff("brightness_end", 2.5, 18.9, 32.8),
+        fdiff("brightness_change", 0.18, 1.02, 31.0),
+        fdiff("brightness_start", 13.7, 18.5, 1.75),
+        fdiff("decay_time", 134.0, 164.0, 0.76),
+    )
+    (suggestion,) = adapter.suggest_adjustments(spec, diffs, recipe)
+    assert suggestion.action is StepAction.VERIFY
+    assert suggestion.parameter_id == "kva.env2.decay.level"
+    assert "Src1" in suggestion.message and "Depth" in suggestion.message
+    assert "run_trial.md" in suggestion.reason
+
+
+def test_moving_filter_eg_keeps_brightness_suggestions(
+    analyze_signal: Analyze, adapter: Pc3a8Adapter
+) -> None:
+    """参照も録音も明るさが変わっていれば、確かめる提案は出さない。"""
+    spec = spec_for(analyze_signal, "bass")
+    recipe = adapter.create_recipe(spec)
+    diffs = (fdiff("brightness_change", 0.18, 0.4, 3.0),)
+    (suggestion,) = adapter.suggest_adjustments(spec, diffs, recipe)
+    assert suggestion.action is not StepAction.VERIFY
+    assert suggestion.parameter_id == "kva.dspmod.lp_frq.depth"
+
+
+def test_amp_suggestions_masked_by_closing_filter(
+    analyze_signal: Analyze, adapter: Pc3a8Adapter
+) -> None:
+    """フィルターが閉じる録音では、アンプの提案は値を出さず後ろに回す（#44、試行 003）。"""
+    spec = spec_for(analyze_signal, "bass")
+    recipe = adapter.create_recipe(spec)
+    diffs = (
+        fdiff("decay_time", 134.0, 753.0, 15.4, "ms"),
+        fdiff("harmonic_slope", -6.0, -11.8, 3.8),
+        fdiff("sustain_level", -4.4, -11.3, 3.4, "dB"),
+        fdiff("brightness_change", 0.18, 0.14, 1.48),
+    )
+    out = adapter.suggest_adjustments(spec, diffs, recipe)
+    assert [s.parameter_id for s in out] == [
+        "kva.dspctl.lp_frq",
+        "kva.dspmod.lp_frq.depth",
+        "kva.ampenv.decay.time",
+    ]
+    masked = out[2]
+    assert masked.value is None and "フィルター" in masked.reason
+
+
+def test_amp_suggestion_not_masked_when_filter_is_static(
+    analyze_signal: Analyze, adapter: Pc3a8Adapter
+) -> None:
+    """フィルターが閉じていない録音のディケイの差は、アンプの提案のまま（値を出す）。"""
+    spec = spec_for(analyze_signal, "bass")
+    recipe = adapter.create_recipe(spec)
+    diffs = (fdiff("decay_time", 134.0, 753.0, 15.4, "ms"),)
+    (suggestion,) = adapter.suggest_adjustments(spec, diffs, recipe)
+    assert suggestion.parameter_id == "kva.ampenv.decay.time"
+    assert "フィルター" not in suggestion.reason
+
+
 def test_sample_suited_sound_gets_alternatives(
     adapter: Pc3a8Adapter, sample_spec: SoundSpec
 ) -> None:

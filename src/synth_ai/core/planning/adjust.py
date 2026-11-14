@@ -2,6 +2,12 @@
 
 特徴とパラメータの向きは一般的な減算合成の傾向（例: アタックの値を上げると
 立ち上がりが遅くなる）。キャリブレーション曲線があれば、向きと量はそちらを優先する。
+
+特徴どうしが重なって効く場面（#44）は、特徴ごとの提案の前に見る:
+- フィルターの EG が効いていない（録音の明るさが時間で変わらない）なら、カットオフや
+  EG の量を動かす提案は出さず、EG の設定を確かめる提案を出す
+- 録音でフィルターが閉じていくなら、音量も一緒に下がる。アンプのディケイが長い・
+  サステインが小さい差の一部はフィルターによるので、アンプの提案は値を出さず後ろに回す
 """
 
 from __future__ import annotations
@@ -9,7 +15,7 @@ from __future__ import annotations
 from synth_ai.core.calibration.models import CalibrationSet
 from synth_ai.core.comparison.models import AdjustmentSuggestion, Difference
 from synth_ai.core.comparison.suggest import MAX_SUGGESTIONS, significant_features
-from synth_ai.core.comparison.wording import as_feature, fix_word
+from synth_ai.core.comparison.wording import as_feature, fix_word, fmt
 from synth_ai.core.planning.protocols import P, RecipeTable
 from synth_ai.core.planning.render import pitch_shift
 from synth_ai.core.planning.roles import ROLE_LABELS, Role
@@ -36,6 +42,30 @@ ROLE_FOR_FEATURE: dict[Feature, tuple[Role, int]] = {
     Feature.NOISINESS: (Role.NOISE_LEVEL, +1),
 }
 
+# 明るさの変化（終盤 ÷ 発音直後）がこれ以上なら、明るさは時間で変わっていない
+EG_STATIC_CHANGE = 0.95
+# 明るさの変化がこれ以下なら、明るさは時間で下がっている（フィルターが閉じていく）
+EG_MOVING_CHANGE = 0.7
+# EG が効いていないとき、出さない提案（明るさの特徴。原因は EG の設定）
+BRIGHTNESS_FEATURES = frozenset(
+    {
+        Feature.BRIGHTNESS,
+        Feature.BRIGHTNESS_END,
+        Feature.HARMONIC_SLOPE,
+        Feature.BRIGHTNESS_START,
+        Feature.BRIGHTNESS_CHANGE,
+        Feature.BRIGHTNESS_DECAY_TIME,
+    }
+)
+# 確かめる EG の設定（この順に手順に書く）
+EG_CHECK_ROLES = (Role.FILTER_EG_SUSTAIN, Role.FILTER_EG_SOURCE, Role.FILTER_EG_INTENSITY)
+# フィルターが閉じると、録音でこちら向きにずれて見えるアンプの特徴（delta の符号）
+FILTER_MASKED_AMP: dict[Feature, int] = {
+    Feature.DECAY_TIME: +1,  # ディケイが長く見える
+    Feature.DECAY_RATE: +1,  # 減衰の傾きが緩やかに見える
+    Feature.SUSTAIN_LEVEL: -1,  # サステインが小さく見える
+}
+
 
 def _current_value(recipe: PatchRecipe | None, parameter_id: str) -> float | None:
     if recipe is None:
@@ -52,12 +82,26 @@ def suggest_adjustments(
     calibrations: CalibrationSet,
 ) -> tuple[AdjustmentSuggestion, ...]:
     out: list[AdjustmentSuggestion] = []
+    later: list[AdjustmentSuggestion] = []  # 先に出す提案が足りなければ使う
     used: set[Role] = set()
+    change = _feature_difference(differences, Feature.BRIGHTNESS_CHANGE)
+    eg_static = (
+        change is not None
+        and change.severity >= 1.0
+        and change.recording >= EG_STATIC_CHANGE
+        and change.reference <= EG_MOVING_CHANGE
+    )
+    if eg_static:
+        assert change is not None
+        out.append(_eg_check_suggestion(change, recipe, table))
+    filter_closing = change is not None and change.recording <= EG_MOVING_CHANGE
     for d in significant_features(differences):
         if len(out) >= MAX_SUGGESTIONS:
             break
         feature = as_feature(d.feature)
         assert feature is not None
+        if eg_static and feature in BRIGHTNESS_FEATURES:
+            continue
         if feature is Feature.ODD_EVEN_RATIO and Role.OSCILLATOR_WAVEFORM not in used:
             used.add(Role.OSCILLATOR_WAVEFORM)
             out.append(_waveform_suggestion(spec, d, table))
@@ -69,8 +113,59 @@ def suggest_adjustments(
             continue
         used.add(role)
         f0 = spec.pitch.f0_hz if spec.pitch else None
+        direction = FILTER_MASKED_AMP.get(feature)
+        if filter_closing and direction is not None and d.delta * direction > 0:
+            later.append(
+                _numeric_suggestion(
+                    feature, role, sign, d, recipe, table, calibrations, f0, masked=True
+                )
+            )
+            continue
         out.append(_numeric_suggestion(feature, role, sign, d, recipe, table, calibrations, f0))
-    return tuple(out)
+    return tuple((out + later)[:MAX_SUGGESTIONS])
+
+
+def _feature_difference(differences: tuple[Difference, ...], feature: Feature) -> Difference | None:
+    return next((d for d in differences if as_feature(d.feature) is feature), None)
+
+
+def _eg_check_suggestion(
+    change: Difference, recipe: PatchRecipe | None, table: RecipeTable[P] | None
+) -> AdjustmentSuggestion:
+    """明るさが時間で変わらないとき、フィルター EG の設定を確かめる提案。"""
+    checks = []
+    first = None
+    for role in EG_CHECK_ROLES:
+        param = table.by_role(role) if table else None
+        if param is None:
+            checks.append(ROLE_LABELS[role])
+            continue
+        first = first or param
+        value = _recipe_value(recipe, param.id)
+        checks.append(f"{param.location} › {param.name}" + (f" が {value}" if value else ""))
+    return AdjustmentSuggestion(
+        priority=1,
+        message="フィルター EG が効いているか確かめる: "
+        + "、".join(checks)
+        + " — 明るさを時間で変える",
+        feature=Feature.BRIGHTNESS_CHANGE.value,
+        parameter_id=first.id if first else None,
+        parameter=first.name if first else None,
+        page=first.page if first else None,
+        action=StepAction.VERIFY,
+        reason=f"{change.message}。録音の明るさが時間で変わっていない。"
+        "EG が下がらない（サステインが最大のまま）か、EG がカットオフにつながっていないと起きる。"
+        "このままカットオフや EG の効きを動かしても直らない",
+    )
+
+
+def _recipe_value(recipe: PatchRecipe | None, parameter_id: str) -> str | None:
+    if recipe is None:
+        return None
+    step = next((s for s in recipe.steps if s.parameter_id == parameter_id), None)
+    if step is None or step.value is None:
+        return None
+    return fmt(step.value) if isinstance(step.value, int | float) else step.value
 
 
 def _numeric_suggestion(
@@ -82,7 +177,9 @@ def _numeric_suggestion(
     table: RecipeTable[P] | None,
     calibrations: CalibrationSet,
     f0_hz: float | None = None,
+    masked: bool = False,
 ) -> AdjustmentSuggestion:
+    """masked: フィルターで音量が下がる録音のアンプの提案。値を出さず、注意を添える。"""
     param = table.by_role(role) if table else None
     curve = None
     if param is not None and table is not None:
@@ -105,7 +202,7 @@ def _numeric_suggestion(
 
     value: float | int | None = None
     shift_note = ""
-    if curve is not None and param is not None and not param.is_choice:
+    if curve is not None and param is not None and not param.is_choice and not masked:
         target, measured = curve.inverse(d.reference), curve.inverse(d.recording)
         current = _current_value(recipe, param.id)
         if target is not None and measured is not None and current is not None:
@@ -133,7 +230,13 @@ def _numeric_suggestion(
         page=param.page if param else None,
         action=action,
         value=value,
-        reason=f"{d.message}。{basis}{shift_note}",
+        reason=f"{d.message}。{basis}{shift_note}"
+        + (
+            "。ただし録音ではフィルターが閉じて音量も下がっており、差の一部はフィルターによる。"
+            "値は出さない。明るさを合わせたあとで、少しずつ動かして確かめる"
+            if masked
+            else ""
+        ),
     )
 
 

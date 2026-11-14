@@ -85,3 +85,18 @@ def test_advisor_used_only_when_supported(lead_spec: SoundSpec) -> None:
     assert fallback[0].feature == "brightness_end"
     assert suggest(lead_spec, DIFFS, None, FakeSynthAdapter())[0].feature == "brightness_end"
     assert suggest(lead_spec, DIFFS, None, None)[0].feature == "brightness_end"
+
+
+def test_adjust_without_table_uses_role_labels(lead_spec: SoundSpec) -> None:
+    """パラメータ表がなくても、EG を確かめる提案は役割の名前で出す（#44）。"""
+    from synth_ai.core.calibration.models import CalibrationSet
+    from synth_ai.core.planning.adjust import suggest_adjustments
+    from synth_ai.core.sound_spec.models import StepAction
+
+    diffs = (
+        fdiff("brightness_end", 2.5, 18.9, 32.8),
+        fdiff("brightness_change", 0.18, 1.02, 31.0),
+    )
+    (out,) = suggest_adjustments(lead_spec, diffs, None, None, CalibrationSet())
+    assert out.action is StepAction.VERIFY and out.parameter_id is None
+    assert "フィルター EG のサステイン・レベル" in out.message

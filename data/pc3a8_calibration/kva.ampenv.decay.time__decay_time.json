@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "synth_id": "pc3a8",
+  "parameter_id": "kva.ampenv.decay.time",
+  "feature": "decay_time",
+  "unit": "ms",
+  "conditions": "1025 KVA BASIC SAW / C4 / velocity 100 / hold 3s / tail 2s",
+  "measured_at": "2026-11-14",
+  "reference_note": "C4",
+  "parameter_scale": "linear",
+  "points": [
+    {
+      "parameter_value": 0.02,
+      "feature_value": 24.581
+    },
+    {
+      "parameter_value": 0.06,
+      "feature_value": 59.745
+    },
+    {
+      "parameter_value": 0.1,
+      "feature_value": 94.787
+    },
+    {
+      "parameter_value": 0.2,
+      "feature_value": 185.446
+    },
+    {
+      "parameter_value": 0.4,
+      "feature_value": 362.814
+    },
+    {
+      "parameter_value": 0.8,
+      "feature_value": 721.358
+    },
+    {
+      "parameter_value": 1.6,
+      "feature_value": 1442.402
+    }
+  ]
+}

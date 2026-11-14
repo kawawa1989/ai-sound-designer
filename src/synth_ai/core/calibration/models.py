@@ -33,6 +33,8 @@ class CalibrationCurve(BaseModel):
     measured_at: str = ""  # 測定日（YYYY-MM-DD）
     # 測定した音の音名（例: "C4"）。×f0 のように音程で意味が変わる特徴の補正に使う
     reference_note: str | None = None
+    # 測定点の間の補間。log は周波数（Hz）のように比で効くパラメータ用（値はすべて正）
+    parameter_scale: Literal["linear", "log"] = "linear"
     points: tuple[CalibrationPoint, ...] = Field(min_length=2)
 
     @model_validator(mode="after")
@@ -40,7 +42,15 @@ class CalibrationCurve(BaseModel):
         values = [p.parameter_value for p in self.points]
         if len(set(values)) != len(values):
             raise ValueError("parameter_value must be unique within a curve")
+        if self.parameter_scale == "log" and min(values) <= 0:
+            raise ValueError("log scale needs positive parameter values")
         return self
+
+    def _to_axis(self, x: np.ndarray | float) -> np.ndarray:
+        return np.log(x) if self.parameter_scale == "log" else np.asarray(x, dtype=float)
+
+    def _from_axis(self, x: float) -> float:
+        return float(np.exp(x)) if self.parameter_scale == "log" else float(x)
 
     def _sorted(self) -> tuple[np.ndarray, np.ndarray]:
         pts = sorted(self.points, key=lambda p: p.parameter_value)
@@ -61,9 +71,11 @@ class CalibrationCurve(BaseModel):
         return float(y.min()), float(y.max())
 
     def predict(self, parameter_value: float) -> float:
-        """パラメータ値から特徴値を推定する（測定点の間を線形補間、範囲外は端の値）。"""
+        """パラメータ値から特徴値を推定する（測定点の間を補間、範囲外は端の値）。"""
         x, y = self._sorted()
-        return float(np.interp(parameter_value, x, y))
+        if self.parameter_scale == "log" and parameter_value <= 0:
+            return float(y[0])
+        return float(np.interp(self._to_axis(parameter_value), self._to_axis(x), y))
 
     def inverse(self, feature_value: float) -> float | None:
         """目標の特徴値になるパラメータ値。単調でない曲線では一意に決まらないため None。
@@ -75,7 +87,7 @@ class CalibrationCurve(BaseModel):
         x, y = self._sorted()
         if y[0] > y[-1]:
             x, y = x[::-1], y[::-1]
-        return float(np.interp(feature_value, y, x))
+        return self._from_axis(float(np.interp(feature_value, y, self._to_axis(x))))
 
     def covers(self, feature_value: float) -> bool:
         lo, hi = self.feature_range

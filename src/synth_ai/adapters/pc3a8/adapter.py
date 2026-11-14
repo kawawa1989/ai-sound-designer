@@ -241,6 +241,9 @@ class Pc3a8Adapter:
             is_numeric=not param.is_choice,
             calibration_feature=feature,
             source_ref=param.source_ref,
+            unit=param.unit,
+            calibration_values=param.calibration_values,
+            log_scale=param.unit == "Hz",
         )
 
     def parameter_info(self, parameter_id: str) -> ParameterInfo | None:

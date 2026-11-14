@@ -80,6 +80,10 @@ class ParameterDef(BaseModel):
     def location(self) -> str:
         return self.page if self.tab is None else f"{self.page} › {self.tab}"
 
+    def shift_octaves(self, value: float, octaves: float) -> float:
+        """目盛りは 1 オクターブで steps_per_octave 段ずつ変わる。"""
+        return value + (self.steps_per_octave or 0.0) * octaves
+
     def choice_with(self, tag: str) -> Choice | None:
         return next((c for c in self.choices if tag in c.tags), None)
 

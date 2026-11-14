@@ -66,3 +66,46 @@ def test_json_example_in_docs_is_valid() -> None:
     doc = (Path(__file__).resolve().parents[3] / "docs" / "kronos_parameter_table.md").read_text()
     block = doc.split("`data/kronos_calibration/*.json`")[1].split("```json")[1].split("```")[0]
     CalibrationCurve.model_validate(json.loads(block))
+
+
+def test_log_scale_interpolates_in_octaves() -> None:
+    """周波数の値は比で効くので、測定点の間を対数で補間する。"""
+    points = (
+        CalibrationPoint(parameter_value=1000, feature_value=2.0),
+        CalibrationPoint(parameter_value=4000, feature_value=6.0),
+    )
+    c = CalibrationCurve(
+        synth_id="s",
+        parameter_id="p",
+        feature="brightness_end",
+        unit="x f0",
+        parameter_scale="log",
+        points=points,
+    )
+    assert c.predict(2000) == pytest.approx(4.0)  # 1 オクターブ上（線形なら 3.33）
+    assert c.inverse(4.0) == pytest.approx(2000)
+    assert c.predict(0) == pytest.approx(2.0)
+    linear = c.model_copy(update={"parameter_scale": "linear"})
+    assert linear.predict(2000) == pytest.approx(2.0 + 4.0 / 3)
+    with pytest.raises(ValidationError, match="positive"):
+        CalibrationCurve.model_validate(
+            c.model_dump()
+            | {"points": [{"parameter_value": 0, "feature_value": 1}, *c.model_dump()["points"]]}
+        )
+
+
+def test_physical_unit_values() -> None:
+    """秒のような小数のパラメータ値でも曲線を作り、逆引きできる。"""
+    c = curve([(0, 8.5), (0.02, 15.0), (0.1, 60.0), (0.4, 230.0)])
+    assert c.is_monotonic
+    assert c.inverse(60.0) == pytest.approx(0.1)
+    assert c.inverse(37.5) == pytest.approx(0.06)
+
+
+def test_kronos_curves_load_unchanged() -> None:
+    """既存の KRONOS の曲線（parameter_scale なし）は線形のまま読める。"""
+    directory = Path(__file__).resolve().parents[3] / "data" / "kronos_calibration"
+    curves = CalibrationSet.load(directory, "kronos2")
+    assert len(curves) == 5
+    attack = curves.get("al1.amp_eg.time.attack", "attack_time")
+    assert attack is not None and attack.parameter_scale == "linear"

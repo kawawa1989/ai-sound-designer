@@ -114,7 +114,7 @@ def _numeric_suggestion(
             value = param.clamp(current + target - measured)
         elif target is not None:
             shift = pitch_shift(param, curve, f0_hz)
-            value = param.clamp(target + (shift.steps if shift else 0.0))
+            value = param.clamp(param.shift_octaves(target, shift.octaves) if shift else target)
             shift_note = shift.describe() if shift else ""
 
     name = f"{param.name}（{param.page}）" if param else ROLE_LABELS[role]

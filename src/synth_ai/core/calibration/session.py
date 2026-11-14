@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from enum import StrEnum
 from pathlib import Path
+from typing import Literal
 
 from synth_ai.core.calibration.models import CalibrationCurve, CalibrationPoint
 from synth_ai.core.sound_spec.derive import quantitative_targets
@@ -42,6 +43,8 @@ class CalibrationPlan:
     values: tuple[float, ...]
     conditions: str
     reference_note: str | None = None  # 測定に使った音名
+    parameter_unit: str | None = None  # 表示用（例: "s"）
+    parameter_scale: Literal["linear", "log"] = "linear"  # CalibrationCurve.parameter_scale
 
 
 @dataclass(frozen=True)
@@ -50,6 +53,8 @@ class Measurement:
     feature_value: float | None
     recording: Path
     issues: tuple[Issue, ...]
+    # 録音のピーク（dBFS）。ABSOLUTE_LEVEL_FEATURES の 0 dB の基準に使う
+    peak_dbfs: float | None = None
 
 
 @dataclass
@@ -68,6 +73,7 @@ class SessionResult:
 # キャリブレーションでは絶対レベル（dBFS）で測り、曲線を作るときに
 # 「いちばん大きいパラメータ値の録音との差」に直す（例: サステインはアタックのピークからの dB）
 ABSOLUTE_LEVEL_FEATURES = {Feature.SUSTAIN_LEVEL}
+LEVEL_NOTE = re.compile(r"(?: / )?値 \S+ の録音(?:のピーク)?を 0 dB とした音量差")
 
 
 def measure_feature(analysis: AudioAnalysis, feature: Feature) -> float | None:
@@ -123,6 +129,7 @@ def run_session(
                 feature_value=measure_for_calibration(analysis, plan.feature),
                 recording=path,
                 issues=relevant_issues(analysis),
+                peak_dbfs=analysis.levels.envelope_peak_dbfs,
             )
             verdict = confirm(measurement)
             if verdict is Verdict.RETRY:
@@ -150,11 +157,19 @@ def build_curve(result: SessionResult, measured_at: date | None = None) -> Calib
     values = [m.feature_value for m in usable if m.feature_value is not None]
     conditions = plan.conditions
     if plan.feature in ABSOLUTE_LEVEL_FEATURES:
-        # いちばん大きいパラメータ値の録音を 0 dB とする
+        # いちばん大きいパラメータ値の録音のピークを 0 dB とする（SoundSpec のサステインも
+        # ピーク基準）。ピークが分からなければ、その録音の測定値を 0 dB とする
         top = usable[-1]
         assert top.feature_value is not None
-        values = [v - top.feature_value for v in values]
-        note = f"値 {top.parameter_value:g} の録音を 0 dB とした音量差"
+        if top.peak_dbfs is not None:
+            reference = top.peak_dbfs
+            note = f"値 {top.parameter_value:g} の録音のピークを 0 dB とした音量差"
+        else:
+            reference = top.feature_value
+            note = f"値 {top.parameter_value:g} の録音を 0 dB とした音量差"
+        values = [v - reference for v in values]
+        # 解析し直したときは、前の曲線の条件に付いた基準の注記を置き換える
+        conditions = LEVEL_NOTE.sub("", conditions)
         conditions = f"{conditions} / {note}" if conditions else note
     return CalibrationCurve(
         synth_id=plan.synth_id,
@@ -164,6 +179,7 @@ def build_curve(result: SessionResult, measured_at: date | None = None) -> Calib
         conditions=conditions,
         measured_at=(measured_at or date.today()).isoformat(),
         reference_note=plan.reference_note,
+        parameter_scale=plan.parameter_scale,
         points=tuple(
             CalibrationPoint(parameter_value=m.parameter_value, feature_value=round(v, 3))
             for m, v in zip(usable, values, strict=True)
@@ -206,7 +222,15 @@ def rebuild_session(
         if feature_value is None:
             result.skipped.append(value)
             continue
-        result.points.append(Measurement(value, feature_value, path, relevant_issues(analysis)))
+        result.points.append(
+            Measurement(
+                value,
+                feature_value,
+                path,
+                relevant_issues(analysis),
+                analysis.levels.envelope_peak_dbfs,
+            )
+        )
     return result
 
 

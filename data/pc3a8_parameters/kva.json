@@ -113,7 +113,18 @@
       "source_ref": "Musician's Guide 本文 6-55〜6-56／実機の画面で確認（2026-11-14）（最小 C 0 16Hz、最大 G 10 25088Hz、1 クリック下は F#10 23680Hz）",
       "notes": "カットオフ周波数。表示は音名と Hz。1 クリックで半音（25088 → 23680 Hz）。KeyTrk・VelTrk はセント単位（VelTrk 最大 10800 ct、本文 6-56）",
       "min": 16,
-      "steps_per_octave": 12
+      "steps_per_octave": 12,
+      "calibration_values": [
+        131,
+        262,
+        523,
+        1047,
+        2093,
+        4186,
+        8372,
+        16744,
+        25088
+      ]
     },
     {
       "id": "kva.dspctl.saw_pch",
@@ -228,6 +239,16 @@
       "max": 60,
       "base_value": 0,
       "unit": "s",
+      "calibration_values": [
+        0,
+        0.01,
+        0.02,
+        0.06,
+        0.1,
+        0.2,
+        0.4,
+        0.8
+      ],
       "roles": [
         "amp_eg_attack"
       ],
@@ -289,6 +310,15 @@
       "max": 60,
       "base_value": 0.1,
       "unit": "s",
+      "calibration_values": [
+        0.02,
+        0.06,
+        0.1,
+        0.2,
+        0.4,
+        0.8,
+        1.6
+      ],
       "roles": [
         "amp_eg_decay"
       ],
@@ -306,11 +336,21 @@
       "max": 100,
       "base_value": 75,
       "unit": "%",
+      "calibration_values": [
+        10,
+        20,
+        30,
+        45,
+        60,
+        75,
+        90,
+        100
+      ],
       "roles": [
         "amp_eg_sustain"
       ],
       "source_ref": "Musician's Guide 本文 6-43",
-      "notes": "0 でなければサステインになる。基準音の 75% は −7.9 dB と測れた（振幅の比なら −2.5 dB）。dB との対応は #22 で測る",
+      "notes": "0 でなければサステインになる。% と dB（ピーク基準）の対応は data/pc3a8_calibration/ の曲線（2026-11-14 測定）: 75% は −8.1 dB、90% は −3.1 dB。100% はディケイがなく、サステインとして測れない",
       "verified": true
     },
     {
@@ -323,6 +363,15 @@
       "max": 60,
       "base_value": 0.06,
       "unit": "s",
+      "calibration_values": [
+        0.02,
+        0.06,
+        0.1,
+        0.2,
+        0.4,
+        0.8,
+        1.6
+      ],
       "roles": [
         "amp_eg_release"
       ],

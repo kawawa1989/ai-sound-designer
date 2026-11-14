@@ -37,7 +37,8 @@ MIN_SHIFT_STEPS = 0.5
 
 @dataclass(frozen=True)
 class PitchShift:
-    steps: float  # 逆引きした値に足す段数
+    steps: float  # 補正する段数（表示用）
+    octaves: float  # 補正する音程差（オクターブ）
     measured_note: str  # 曲線を測った音
     target_note: str  # 参照音
 
@@ -67,10 +68,11 @@ def pitch_shift(
         measured_hz = note_to_hz(curve.reference_note)
     except ValueError:
         return None
-    steps = param.steps_per_octave * math.log2(f0_hz / measured_hz)
+    octaves = math.log2(f0_hz / measured_hz)
+    steps = param.steps_per_octave * octaves
     if abs(steps) < MIN_SHIFT_STEPS:
         return None
-    return PitchShift(steps, curve.reference_note, hz_to_note(f0_hz)[0])
+    return PitchShift(steps, octaves, curve.reference_note, hz_to_note(f0_hz)[0])
 
 
 def _num(value: float) -> str:
@@ -158,7 +160,9 @@ def render_steps(
             estimate = curve.inverse(intent.target.value) if curve else None
             if curve is not None and estimate is not None:
                 shift = pitch_shift(param, curve, f0_hz)
-                value = param.clamp(estimate + (shift.steps if shift else 0.0))
+                value = param.clamp(
+                    param.shift_octaves(estimate, shift.octaves) if shift else estimate
+                )
                 if not curve.covers(intent.target.value):
                     reason += "（目標が測定範囲外のため、測定した端の値）"
                 else:

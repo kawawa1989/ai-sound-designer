@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "synth_id": "pc3a8",
+  "parameter_id": "kva.ampenv.rel1.time",
+  "feature": "release_time",
+  "unit": "ms",
+  "conditions": "1025 KVA BASIC SAW / C4 / velocity 100 / hold 1.5s / tail 4s",
+  "measured_at": "2026-11-14",
+  "reference_note": "C4",
+  "parameter_scale": "linear",
+  "points": [
+    {
+      "parameter_value": 0.06,
+      "feature_value": 20.732
+    },
+    {
+      "parameter_value": 0.1,
+      "feature_value": 26.035
+    },
+    {
+      "parameter_value": 0.2,
+      "feature_value": 42.49
+    },
+    {
+      "parameter_value": 0.4,
+      "feature_value": 82.185
+    },
+    {
+      "parameter_value": 0.8,
+      "feature_value": 158.93
+    },
+    {
+      "parameter_value": 1.6,
+      "feature_value": 313.532
+    }
+  ]
+}

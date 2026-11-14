@@ -76,6 +76,9 @@ class ParameterInfo(BaseModel):
     is_numeric: bool
     calibration_feature: str | None = None  # 測るとよい音響特徴（Feature の値）
     source_ref: str | None = None
+    unit: str | None = None  # 値の単位（例: "s"、"Hz"）
+    calibration_values: tuple[float, ...] = ()  # 測る値（本体で選べる値）。空なら範囲から決める
+    log_scale: bool = False  # 比で効く値（周波数など）。曲線を対数で補間する
 
 
 @runtime_checkable

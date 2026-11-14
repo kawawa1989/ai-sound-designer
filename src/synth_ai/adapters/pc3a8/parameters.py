@@ -21,6 +21,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from synth_ai.adapters.base import CcControl
 from synth_ai.core.planning.roles import ChoiceTag, Role
 
 # 表に書ける役割と選択肢のタグ（機種共通の語彙）
@@ -90,6 +91,8 @@ class ParameterDef(BaseModel):
     steps_per_octave: float | None = Field(default=None, gt=0)
     # キャリブレーションで測る値（本体で選べる値。docs/manuals/pc3a8/calibrate.md）
     calibration_values: tuple[float, ...] = ()
+    # CC で動かして測るときの設定（docs/manuals/pc3a8/calibrate_cc.md）
+    cc_calibration: CcControl | None = None
     choices: tuple[Choice, ...] = ()
     roles: tuple[str, ...] = ()
     source_ref: str  # 例: "Musician's Guide 本文 6-43"、"実機の画面で確認（2026-11-14）"

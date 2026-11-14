@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "synth_id": "pc3a8",
+  "parameter_id": "kva.dspctl.lp_frq",
+  "feature": "brightness_end",
+  "unit": "x f0",
+  "conditions": "1026 KVA CC CAL / 1026 KVA CC CAL を CC 14 で設定（値 = 49 × 2^(10800 ct × CC/127)、比例を仮定） / C4 / velocity 100 / hold 1.5s / tail 2s",
+  "measured_at": "2026-11-14",
+  "reference_note": "C4",
+  "parameter_scale": "log",
+  "points": [
+    {
+      "parameter_value": 130.8738,
+      "feature_value": 2.429
+    },
+    {
+      "parameter_value": 260.3229,
+      "feature_value": 2.686
+    },
+    {
+      "parameter_value": 517.812,
+      "feature_value": 3.266
+    },
+    {
+      "parameter_value": 1029.9872,
+      "feature_value": 4.255
+    },
+    {
+      "parameter_value": 2048.7619,
+      "feature_value": 5.648
+    },
+    {
+      "parameter_value": 4280.3965,
+      "feature_value": 7.557
+    },
+    {
+      "parameter_value": 8514.1968,
+      "feature_value": 9.619
+    },
+    {
+      "parameter_value": 16935.7084,
+      "feature_value": 11.806
+    },
+    {
+      "parameter_value": 25088.0,
+      "feature_value": 13.222
+    }
+  ]
+}

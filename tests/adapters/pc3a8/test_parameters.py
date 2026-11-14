@@ -229,3 +229,16 @@ def test_cutoff_snaps_to_semitones() -> None:
     assert cutoff.clamp(24000) == 23680  # F#10
     assert cutoff.clamp(99999) == 25088 and cutoff.clamp(1) == 16
     assert all(cutoff.clamp(v) == v for v in cutoff.calibration_values)
+
+
+def test_cc_calibration_mapping() -> None:
+    """CC 0 で 49 Hz（G 1）、127 で +10800 ct（25088 Hz、G 10）。"""
+    loaded = load_table(ROOT / "data" / "pc3a8_parameters", "KVA")
+    assert loaded is not None
+    cutoff = loaded.by_id("kva.dspctl.lp_frq")
+    assert cutoff is not None and cutoff.cc_calibration is not None
+    cc = cutoff.cc_calibration
+    assert cc.control in (14, 15)
+    assert cc.value_at(0) == 49 and cc.value_at(127) == pytest.approx(25088)
+    assert cc.cc_for(25088) == 127 and cc.cc_for(10) == 0 and cc.cc_for(99999) == 127
+    assert [cc.cc_for(v) for v in (131, 1047, 4186)] == [20, 62, 91]

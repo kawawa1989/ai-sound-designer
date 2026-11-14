@@ -164,7 +164,8 @@ MIDI が使えない場合は `midi.output_port` を空（null）のままにす
 出典は Kurzweil PC3A Musician's Guide（V3）。ページは本文ページ（例: 本文 5-4）。
 構造の整理は `docs/pc3a8_program_mode.md`。
 
-PC3A8 では、このツールは**ノートを鳴らす**（Note On / Off）ことだけを行う。
+PC3A8 では、このツールは**ノートを鳴らす**（Note On / Off）ことと、キャリブレーションの CC モードで
+**決めた CC 番号を送る**（下の「このツールが送る MIDI」）ことだけを行う。
 
 - パラメータを読み書きする SysEx の形式は公開されていない。マニュアルの MIDI Implementation Chart には、SysEx を送受信できることだけが書かれている（本文 A-1）。このため状態の読み取りも書き込みもしない
 - 音色の設定は、ツールが出す手順書に従って人が本体で行う
@@ -203,6 +204,7 @@ PC3A8 では、このツールは**ノートを鳴らす**（Note On / Off）こ
 | ID | 名前 | 内容 |
 | --- | --- | --- |
 | 1025 | KVA BASIC SAW | キャリブレーションの基準の音（2026-11-14 作成）。Program 999 Default Program を編集して保存。下の「基準音 1025 の設定」 |
+| 1026 | KVA CC CAL | **CC キャリブレーション用**（#34）。1025 を元に、LP Frq を G 1（49 Hz）、DSPMOD の LP Frq の Src1 を CC 14、Depth を +10800 ct にする。作り方は `docs/manuals/pc3a8/calibrate_cc.md` |
 
 #### 基準音 1025 の設定
 
@@ -253,12 +255,29 @@ Storage モードの STORE ページで、ユーザーが作った・編集し�
 
 ### このツールが送る MIDI
 
-KRONOS と同じく、Note On / Note Off / All Notes Off（CC 123）の 3 種類だけ
-（`src/synth_ai/infrastructure/midi/sender.py` で制限している）。
+送るのは次の 4 種類だけ（`src/synth_ai/infrastructure/midi/sender.py` で制限している）。
+
+| メッセージ | 使う場面 |
+| --- | --- |
+| Note On / Note Off | 鳴らす（`midi-probe`・`capture`・`calibrate`） |
+| All Notes Off（CC 123） | 鳴らし終わり・中断のとき |
+| **CC 14・CC 15**（値 0〜127） | `calibrate` の CC モードだけ（下の「CC を送る条件」） |
 
 - **Program Change は送らない**。PC3A8 は Program Change を受信する（本文 A-1）ので、送ると選択中の Program が切り替わり、保存していない編集が失われる
 - **SysEx は送らない**
+- **上の表にない CC は送らない**（バンク切り替えの 0・32、音量の 7、データ入力の 6・38・98〜101、チャンネルモードの 120〜127 など）。sender は、許可した番号以外の CC を拒否する
 - 音色は、人が本体でテスト用の ID を選んでおく
+
+#### CC を送る条件（2026-11-14 にユーザーが承認、#34）
+
+CC は Program のパラメータの制御元（Src1・Source など）に割り当てた番号を送ると、演奏中にそのパラメータが動く（本文 10-11）。
+保存された値は変わらない。
+
+1. 番号は **CC 14 と CC 15** だけ。どちらも本体のコントローラーの既定の割り当てにない番号（本文 7-21〜7-22、10-13）
+2. チャンネルは `config/local.yaml` の `channel`（Program モードで選んでいるチャンネル）だけ
+3. 送るのは `calibrate` の CC モードで、人が本体で**キャリブレーション用のテスト Program**（下の表の「CC キャリブレーション用」）を選んでいると確かめたあとだけ。ツールは選んでいる Program を読めないので、コマンドの最初に人が確かめる
+4. 測り終えたら（中断したときも）、送った CC を **0**（効果なし）に戻す
+5. 測定のあとも保存しない（Exit で No）
 
 ### 録音の前に
 

@@ -124,7 +124,13 @@
         8372,
         16744,
         25088
-      ]
+      ],
+      "cc_calibration": {
+        "control": 14,
+        "base": 49,
+        "depth_cents": 10800,
+        "program": "1026 KVA CC CAL"
+      }
     },
     {
       "id": "kva.dspctl.saw_pch",

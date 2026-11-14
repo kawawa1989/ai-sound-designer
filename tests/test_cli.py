@@ -314,3 +314,48 @@ def test_devices_shows_selected_synth(monkeypatch: pytest.MonkeyPatch, tmp_path:
     assert result.exit_code == 0
     assert "機種: pc3a8" in result.output
     assert "* PC3A USB" in result.output and "  KRONOS KEYBOARD" in result.output
+
+
+def test_calibrate_pc3a8_physical_units(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """PC3A8 では、表の測る値（秒）を既定にし、単位を付けて案内する。"""
+    from synth_ai import registry
+    from synth_ai.core.calibration.models import CalibrationCurve
+    from synth_ai.core.synthesis.test_signals import Adsr
+    from synth_ai.infrastructure.capture import recorder as rec_module
+    from tests.infrastructure.fakes import FakePort, FakeRecorder
+
+    attacks = iter([0.002, 0.02, 0.1])
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("mido.get_output_names", lambda: ["Steinberg UR22mkII Port1"])
+    monkeypatch.setattr("mido.open_output", lambda name: FakePort())
+    monkeypatch.setattr(
+        rec_module,
+        "SoundDeviceRecorder",
+        lambda *a: FakeRecorder(lambda: saw(adsr=Adsr(attack_s=next(attacks), note_s=1.5))),
+    )
+    monkeypatch.setitem(registry.CALIBRATION_DIRS, "pc3a8", tmp_path / "cal")
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    config = tmp_path / "local.yaml"
+    config.write_text(
+        "synth: pc3a8\nmidi:\n  output_port: UR22mkII\n"
+        "test_note:\n  hold_s: 0.01\n  release_tail_s: 0\n"
+        "capture:\n  pre_roll_s: 0\n"
+    )
+    args = ["calibrate", "kva.ampenv.att1.time", "--values", "0,0.02,0.1", "--config", str(config)]
+    result = CliRunner().invoke(app, args, input="\n\n" * 3)
+    assert result.exit_code == 0, result.output
+    assert "AMPENV › Att1 › Time を 0.02 s にして" in result.output
+    assert "U-CC000" not in result.output
+    curve = CalibrationCurve.model_validate_json(
+        (tmp_path / "cal" / "kva.ampenv.att1.time__attack_time.json").read_text()
+    )
+    assert [p.parameter_value for p in curve.points] == [0, 0.02, 0.1]
+    assert curve.synth_id == "pc3a8" and curve.parameter_scale == "linear"
+
+
+def test_calibrate_pc3a8_lists_units(tmp_path: Path) -> None:
+    config = tmp_path / "local.yaml"
+    config.write_text("synth: pc3a8\n")
+    result = CliRunner().invoke(app, ["calibrate", "--config", str(config)])
+    assert result.exit_code == 0, result.output
+    assert "kva.dspctl.lp_frq  brightness_end  16〜25088 Hz" in result.output

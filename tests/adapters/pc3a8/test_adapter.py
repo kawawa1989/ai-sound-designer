@@ -190,3 +190,85 @@ def test_no_alternative_for_synth_friendly_sound(
 ) -> None:
     recipe = adapter.create_recipe(spec_for(analyze_signal, "lead"))
     assert recipe.sample_alternative is None and recipe.limitations == ()
+
+
+def test_cutoff_curve_shifts_by_octave(adapter: Pc3a8Adapter, tmp_path: Path) -> None:
+    """C4 で測った LP Frq の曲線を 1 オクターブ上の参照音に使うと、Hz は 2 倍になる。"""
+    from synth_ai.core.calibration.models import CalibrationCurve, CalibrationPoint
+    from synth_ai.core.sound_spec.models import PitchTarget, QuantTarget, TimbreSpec
+
+    curve = CalibrationCurve(
+        synth_id="pc3a8",
+        parameter_id="kva.dspctl.lp_frq",
+        feature="brightness_end",
+        unit="x f0",
+        reference_note="C4",
+        parameter_scale="log",
+        points=(
+            CalibrationPoint(parameter_value=523, feature_value=2.0),
+            CalibrationPoint(parameter_value=2093, feature_value=6.0),
+        ),
+    )
+    (tmp_path / "lp.json").write_text(curve.model_dump_json())
+    calibrated = Pc3a8Adapter(parameter_dir=TABLE_DIR, calibration_dir=tmp_path)
+
+    def cutoff(note: str, f0: float) -> float:
+        spec = SoundSpec(
+            spec_id="s",
+            reference_id="r",
+            pitch=PitchTarget(note=note, f0_hz=f0, confidence=0.9),
+            timbre=TimbreSpec(),
+            targets=(
+                QuantTarget(
+                    feature="brightness_end", value=4.0, unit="x f0", tolerance=0.5, confidence=0.8
+                ),
+            ),
+        )
+        step = next(
+            s for s in calibrated.create_recipe(spec).steps if s.parameter_id == "kva.dspctl.lp_frq"
+        )
+        assert isinstance(step.value, float | int)
+        return float(step.value)
+
+    assert cutoff("C4", 261.63) == pytest.approx(1046, rel=0.01)  # 523 と 2093 の対数の中点
+    assert cutoff("C5", 523.25) == pytest.approx(2093, rel=0.01)
+
+
+def test_project_curves_reproduce_base_sound() -> None:
+    """data/pc3a8_calibration/ の曲線で、基準音 1025 を録って解析した値を逆引きすると、
+    基準音の設定に戻る（#22 の受け入れ条件）。目標は 2026-11-14 の録音の解析結果。"""
+    from synth_ai.core.sound_spec.models import (
+        EnvelopeSpec,
+        Level,
+        PitchTarget,
+        QuantTarget,
+        TimbreSpec,
+    )
+
+    data = TABLE_DIR.parent
+    calibrated = Pc3a8Adapter(parameter_dir=TABLE_DIR, calibration_dir=data / "pc3a8_calibration")
+    measured = {
+        "attack_time": (8.5, "ms"),
+        "decay_time": (95.0, "ms"),
+        "sustain_level": (-7.9, "dB"),
+        "release_time": (21.0, "ms"),
+        "brightness_end": (13.2, "x f0"),
+    }
+    spec = SoundSpec(
+        spec_id="base-1025",
+        reference_id="pc3a8_1025_c4",
+        pitch=PitchTarget(note="C4", f0_hz=261.66, confidence=0.94),
+        timbre=TimbreSpec(harmonicity=Level.VERY_HIGH),
+        envelope=EnvelopeSpec(sustain=Level.MEDIUM),
+        targets=tuple(
+            QuantTarget(feature=f, value=v, unit=u, tolerance=1.0, confidence=0.9)
+            for f, (v, u) in measured.items()
+        ),
+    )
+    values = {s.parameter_id: s.value for s in calibrated.create_recipe(spec).steps}
+    assert values["kva.ampenv.att1.time"] == 0
+    assert values["kva.ampenv.decay.time"] == pytest.approx(0.1, abs=0.005)  # 刻みは未確認
+    assert values["kva.ampenv.rel1.time"] == pytest.approx(0.06)
+    assert values["kva.dspctl.lp_frq"] == pytest.approx(25088, rel=0.02)
+    sustain = values["kva.ampenv.decay.level"]
+    assert isinstance(sustain, float | int) and abs(sustain - 75) < 2

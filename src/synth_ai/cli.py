@@ -415,7 +415,8 @@ def _record_calibration(
 
         def ask_to_set(index: int, value: float) -> Step:
             answer = ask(
-                f"[{index + 1}/{len(plan.values)}] {plan.parameter_label} を {value:g} にして"
+                f"[{index + 1}/{len(plan.values)}] {plan.parameter_label} を"
+                f" {value:g}{f' {plan.parameter_unit}' if plan.parameter_unit else ''} にして"
                 " Enter（s: スキップ / q: ここで終了）"
             )
             return {"s": Step.SKIP, "q": Step.QUIT}.get(answer, Step.GO)
@@ -512,7 +513,8 @@ def calibrate(
         typer.echo("測れるパラメータ（ID / 測る特徴 / 範囲）:")
         for p in adapter.calibratable_parameters():
             typer.echo(
-                f"  {p.parameter_id}  {p.calibration_feature}  {p.min:g}〜{p.max:g}  {p.label}"
+                f"  {p.parameter_id}  {p.calibration_feature}  {p.min:g}〜{p.max:g}"
+                f"{f' {p.unit}' if p.unit else ''}  {p.label}"
             )
         return
 
@@ -527,13 +529,15 @@ def calibrate(
         points = (
             tuple(float(v) for v in values.split(","))
             if values
-            else _default_values(info.min, info.max)
+            else info.calibration_values or _default_values(info.min, info.max)
         )
     except ValueError as exc:
         raise _fail(
             ValueError(f"--values はカンマ区切りの数値で指定してください: {values}")
         ) from exc
     out_of_range = [v for v in points if not info.min <= v <= info.max]
+    if info.log_scale and min(points) <= 0:
+        raise _fail(ValueError("周波数のパラメータは 0 より大きい値で測ってください"))
     if out_of_range:
         raise _fail(
             ValueError(f"範囲 {info.min:g}〜{info.max:g} の外の値があります: {out_of_range}")
@@ -568,6 +572,8 @@ def calibrate(
         values=points,
         conditions=f"{conditions} / {auto_conditions}" if conditions else auto_conditions,
         reference_note=note_name,
+        parameter_unit=info.unit,
+        parameter_scale="log" if info.log_scale else "linear",
     )
     unit = UNITS[target]
     session_dir = (
@@ -604,7 +610,9 @@ def calibrate(
             raise _fail(exc) from exc
         session_dir = from_recordings
     else:
-        typer.echo(f"値: {', '.join(f'{v:g}' for v in points)}")
+        typer.echo(
+            f"値: {', '.join(f'{v:g}' for v in points)}" + (f" {info.unit}" if info.unit else "")
+        )
         typer.echo(f"条件: {plan.conditions}")
         typer.echo("基準の音色を選び、このパラメータだけを変えてください。\n")
         try:
@@ -641,9 +649,7 @@ def calibrate(
         save_json(curve, path)
         typer.echo(f"保存しました: {path}")
     typer.echo(f"録音: {session_dir}")
-    typer.echo(
-        "基準の音色に戻すため、変えたパラメータを保存せずに U-CC000 などを選び直してください"
-    )
+    typer.echo("基準の音色に戻すため、変えたパラメータを保存せずに、基準の音色を選び直してください")
 
 
 @app.command("test-signals")

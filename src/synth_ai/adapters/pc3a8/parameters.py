@@ -87,6 +87,8 @@ class ParameterDef(BaseModel):
     unit: str | None = None  # "s"、"%"、"dB"、"Hz"、"ct" など
     # 値の 1 段が周波数で何分の 1 オクターブか（Hz の刻みが半音なら 12）
     steps_per_octave: float | None = Field(default=None, gt=0)
+    # キャリブレーションで測る値（本体で選べる値。docs/manuals/pc3a8/calibrate.md）
+    calibration_values: tuple[float, ...] = ()
     choices: tuple[Choice, ...] = ()
     roles: tuple[str, ...] = ()
     source_ref: str  # 例: "Musician's Guide 本文 6-43"、"実機の画面で確認（2026-11-14）"
@@ -125,6 +127,13 @@ class ParameterDef(BaseModel):
                 raise ValueError(f"{self.id}: step range {r.start}..{r.end} is out of range")
         if self.step and self.grid():
             raise ValueError(f"{self.id}: use either step or values/step_ranges")
+        for value in self.calibration_values:
+            if not self.min <= value <= self.max:
+                raise ValueError(f"{self.id}: calibration value {value} is out of range")
+            if (self.step or self.grid()) and abs(self.clamp(value) - value) > 1e-9:
+                raise ValueError(f"{self.id}: calibration value {value} cannot be set")
+        if len(set(self.calibration_values)) != len(self.calibration_values):
+            raise ValueError(f"{self.id}: calibration values are duplicated")
         return self
 
     def grid(self) -> tuple[float, ...]:
@@ -162,6 +171,12 @@ class ParameterDef(BaseModel):
     @property
     def location(self) -> str:
         return self.page if self.section is None else f"{self.page} › {self.section}"
+
+    def shift_octaves(self, value: float, octaves: float) -> float:
+        """Hz の値は 1 オクターブで 2 倍。それ以外は steps_per_octave 段ずつ変わる。"""
+        if self.unit == "Hz":
+            return float(value * 2.0**octaves)
+        return value + (self.steps_per_octave or 0.0) * octaves
 
     def choice_with(self, tag: str) -> Choice | None:
         return next((c for c in self.choices if tag in c.tags), None)

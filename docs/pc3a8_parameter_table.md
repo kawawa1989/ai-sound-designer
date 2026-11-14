@@ -99,3 +99,21 @@ SoundSpec でサンプルの再生が最も有力な仮説になった音でも�
 - レシピの `sample_alternative` に、できないことと代わりの方法を書く: KVA の発振器で近似する、ノイズ成分を別の Layer の RES NOISE で重ねる、ROM の Keymap を使う（Keymap の名前は、実機で確かめるまで挙げない）
 - 非整数倍音やノイズのように、基準音の配置では再現しきれない点は `limitations`（再現の限界）に書く
 - 取り込めない機種のレシピに `sample_alternative` がなければ、Core の `validate_recipe` がエラーにする（Capability の `user_sample_import` だけを見る）
+
+## キャリブレーションの結果（#22、2026-11-14）
+
+基準音 1025 KVA BASIC SAW、C4・ベロシティ 100 で、1 項目だけを変えて測った。手順は `docs/manuals/pc3a8/calibrate.md`、
+曲線は `data/pc3a8_calibration/`。
+
+| 項目 | 測った特徴 | 結果 |
+| --- | --- | --- |
+| AMPENV Att1 Time | アタック（10%→90%） | 0 s で 8.5 ms、0.1 s 以上ではおよそ設定の 0.78 倍（0.8 s → 635 ms） |
+| AMPENV Dec1 Time | ディケイ | およそ設定の 0.9 倍（0.1 s → 95 ms、1.6 s → 1442 ms） |
+| AMPENV Dec1 Level | サステイン（ピーク基準の dB） | 10% → −39.9 dB、45% → −19.9 dB、75% → −8.1 dB、90% → −3.1 dB。100% はディケイがなく、サステインとして測れない |
+| AMPENV Rel1 Time | リリース（20 dB 下がるまで） | およそ設定の 0.2 倍（0.06 s → 21 ms、1.6 s → 314 ms）。0.02 s は短すぎて測れない |
+| DSPCTL LP Frq | 持続部の明るさ（×f0） | 131 Hz → 2.4、1047 Hz → 4.3、4186 Hz → 7.6、25088 Hz → 13.2。対数で補間する（`parameter_scale: log`） |
+
+- 曲線から逆引きすると、基準音の録音から基準音の設定（Att1 0 s、Dec1 0.10 s・75%、Rel1 0.06 s、LP Frq 25088 Hz）に戻る（`tests/adapters/pc3a8/test_adapter.py`）
+- Dec1 Level の % は振幅の比ではない（75% は振幅の比なら −2.5 dB のはずが −8.1 dB）
+- Rel1 の Time は 0% まで下がる時間で、解析のリリース（20 dB 下がるまで）よりかなり長い
+- 曲線は C4 で測った。明るさは音程で変わるので、LP Frq は参照音との音程差だけずらす（1 オクターブ上なら Hz を 2 倍）

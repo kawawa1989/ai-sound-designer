@@ -140,4 +140,45 @@ def test_sustain_is_measured_against_loudest_value(tmp_path: Path) -> None:
     expected = [20 * np.log10(a) for a in amplitudes.values()]
     assert measured == pytest.approx(expected, abs=0.3)
     assert curve.unit == "dB"
-    assert "値 99 の録音を 0 dB" in curve.conditions
+    assert "値 99 の録音のピークを 0 dB" in curve.conditions
+
+
+def test_sustain_is_relative_to_peak_when_top_value_decays(tmp_path: Path) -> None:
+    """発音直後のピークが一定で、最大の値でもサステインがピークより小さい場合（PC3A8 の例）。
+
+    100% ではディケイがなくサステインを測れないため、最大の値は 90%。
+    その録音のピークを 0 dB にすれば、SoundSpec と同じピーク基準の dB になる。
+    """
+    import numpy as np
+
+    from synth_ai.core.calibration.session import rebuild_session
+
+    sr = 48_000
+    t = np.arange(int(2.0 * sr)) / sr
+
+    def tone(sustain: float) -> np.ndarray:
+        env = np.interp(t, [0, 0.005, 0.105, 1.6, 1.65], [0, 1.0, sustain, sustain, 0])
+        saw = ts.additive(261.63, len(t) / sr, lambda k, tt: np.full_like(tt, 1.0 / k))
+        return 0.3 * saw * env
+
+    amplitudes = {20.0: 0.2, 50.0: 0.5, 90.0: 0.7}
+    recordings = {
+        v: ts.write_wav(tmp_path / f"v{v:g}_try1.wav", tone(a)) for v, a in amplitudes.items()
+    }
+    plan = CalibrationPlan("s", "p.sus", "Sustain", Feature.SUSTAIN_LEVEL, tuple(amplitudes), "")
+    curve = build_curve(rebuild_session(plan, recordings, analyze))
+    measured = [p.feature_value for p in curve.points]
+    expected = [20 * np.log10(a) for a in amplitudes.values()]  # ピーク 1.0 が基準
+    assert measured == pytest.approx(expected, abs=0.5)
+    assert measured[-1] < -2
+    # 解析し直しても、基準の注記は重ならない
+    again = build_curve(
+        rebuild_session(
+            CalibrationPlan(
+                "s", "p.sus", "Sustain", Feature.SUSTAIN_LEVEL, tuple(amplitudes), curve.conditions
+            ),
+            recordings,
+            analyze,
+        )
+    )
+    assert again.conditions.count("0 dB") == 1

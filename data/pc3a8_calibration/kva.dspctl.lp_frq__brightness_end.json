@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "synth_id": "pc3a8",
+  "parameter_id": "kva.dspctl.lp_frq",
+  "feature": "brightness_end",
+  "unit": "x f0",
+  "conditions": "1025 KVA BASIC SAW / C4 / velocity 100 / hold 1.5s / tail 2s",
+  "measured_at": "2026-11-14",
+  "reference_note": "C4",
+  "parameter_scale": "log",
+  "points": [
+    {
+      "parameter_value": 131.0,
+      "feature_value": 2.43
+    },
+    {
+      "parameter_value": 262.0,
+      "feature_value": 2.696
+    },
+    {
+      "parameter_value": 523.0,
+      "feature_value": 3.304
+    },
+    {
+      "parameter_value": 1047.0,
+      "feature_value": 4.317
+    },
+    {
+      "parameter_value": 2093.0,
+      "feature_value": 5.76
+    },
+    {
+      "parameter_value": 4186.0,
+      "feature_value": 7.589
+    },
+    {
+      "parameter_value": 8372.0,
+      "feature_value": 9.692
+    },
+    {
+      "parameter_value": 16744.0,
+      "feature_value": 11.916
+    },
+    {
+      "parameter_value": 25088.0,
+      "feature_value": 13.221
+    }
+  ]
+}

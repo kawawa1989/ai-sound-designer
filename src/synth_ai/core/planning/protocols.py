@@ -53,6 +53,10 @@ class RecipeParameter(Protocol):
         """範囲と刻みに合わせた、本体で設定できる値。"""
         ...
 
+    def shift_octaves(self, value: float, octaves: float) -> float:
+        """音程が octaves だけ違う参照音に合わせて、周波数を決める値をずらす。"""
+        ...
+
     def choice_with(self, tag: str) -> ChoiceOption | None:
         """このタグが付いた選択肢。"""
         ...

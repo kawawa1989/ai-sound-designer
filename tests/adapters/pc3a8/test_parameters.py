@@ -141,6 +141,9 @@ def test_uneven_grid() -> None:
         numeric(step_ranges=[{"start": 50, "end": 70, "step": 1}]),
         numeric(values=[-1]),
         numeric(step=0.1, values=[0, 0.5]),
+        numeric(calibration_values=[99]),  # 範囲外
+        numeric(step=0.02, calibration_values=[0.05]),  # 本体で選べない
+        numeric(calibration_values=[1, 1]),
     ],
 )
 def test_rejects_invalid_grid(bad: dict[str, Any]) -> None:
@@ -185,3 +188,32 @@ def test_project_kva_table_is_valid() -> None:
         loaded.by_id("kva.alg.block1").base_value,  # type: ignore[union-attr]
         loaded.by_id("kva.alg.block2").base_value,  # type: ignore[union-attr]
     )
+
+
+def test_shift_octaves() -> None:
+    """Hz の値は 1 オクターブで 2 倍、それ以外は steps_per_octave 段ずつ。"""
+    hz = ParameterTable.model_validate(
+        table(numeric(unit="Hz", min=16, max=25088, steps_per_octave=12))
+    ).parameters[0]
+    assert hz.shift_octaves(1000, 1) == pytest.approx(2000)
+    assert hz.shift_octaves(1000, -0.5) == pytest.approx(1000 / 2**0.5)
+    steps = ParameterTable.model_validate(
+        table(numeric(unit="ct", steps_per_octave=1200))
+    ).parameters[0]
+    assert steps.shift_octaves(10, 1) == 1210
+
+
+def test_project_calibration_values() -> None:
+    """測る値は本体で選べる値。周波数は 0 より大きい（対数で補間する）。"""
+    loaded = load_table(ROOT / "data" / "pc3a8_parameters", "KVA")
+    assert loaded is not None
+    measured = {p.id: p for p in loaded.parameters if p.calibration_values}
+    assert set(measured) == {
+        "kva.ampenv.att1.time",
+        "kva.ampenv.decay.time",
+        "kva.ampenv.decay.level",
+        "kva.ampenv.rel1.time",
+        "kva.dspctl.lp_frq",
+    }
+    assert min(measured["kva.dspctl.lp_frq"].calibration_values) > 0
+    assert 25088 in measured["kva.dspctl.lp_frq"].calibration_values  # 基準音の値

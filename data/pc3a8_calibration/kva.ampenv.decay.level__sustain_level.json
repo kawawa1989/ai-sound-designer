@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "synth_id": "pc3a8",
+  "parameter_id": "kva.ampenv.decay.level",
+  "feature": "sustain_level",
+  "unit": "dB",
+  "conditions": "1025 KVA BASIC SAW / C4 / velocity 100 / hold 2s / tail 2s / 値 90 の録音のピークを 0 dB とした音量差",
+  "measured_at": "2026-11-14",
+  "reference_note": "C4",
+  "parameter_scale": "linear",
+  "points": [
+    {
+      "parameter_value": 10.0,
+      "feature_value": -39.925
+    },
+    {
+      "parameter_value": 20.0,
+      "feature_value": -29.893
+    },
+    {
+      "parameter_value": 30.0,
+      "feature_value": -25.876
+    },
+    {
+      "parameter_value": 45.0,
+      "feature_value": -19.855
+    },
+    {
+      "parameter_value": 60.0,
+      "feature_value": -13.835
+    },
+    {
+      "parameter_value": 75.0,
+      "feature_value": -8.149
+    },
+    {
+      "parameter_value": 90.0,
+      "feature_value": -3.133
+    }
+  ]
+}

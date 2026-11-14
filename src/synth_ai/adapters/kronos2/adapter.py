@@ -29,12 +29,18 @@ from synth_ai.core.calibration.models import CalibrationSet
 from synth_ai.core.comparison.models import AdjustmentSuggestion, Difference
 from synth_ai.core.planning.adjust import suggest_adjustments
 from synth_ai.core.planning.intents import Intent
-from synth_ai.core.planning.render import describe_intent, describe_target, render_steps
+from synth_ai.core.planning.render import (
+    describe_intent,
+    describe_target,
+    limitation_sections,
+    render_steps,
+)
 from synth_ai.core.planning.roles import CALIBRATION_FEATURES
 from synth_ai.core.planning.subtractive import subtractive_intents
 from synth_ai.core.sound_spec.models import (
     AlternativeApproach,
     PatchRecipe,
+    SampleAlternative,
     SoundSpec,
     StepStatus,
 )
@@ -127,7 +133,18 @@ class Kronos2Adapter:
                 for e in ranking
                 if e.engine != chosen.engine and e.score > 0
             ),
+            sample_alternative=self._sample_alternative(spec, chosen.engine),
             uncertainties=tuple(uncertainties),
+        )
+
+    def _sample_alternative(self, spec: SoundSpec, engine: str) -> SampleAlternative | None:
+        hypothesis = spec.sample_hypothesis
+        if hypothesis is None or self.capabilities().is_supported("user_sample_import"):
+            return None
+        return SampleAlternative(
+            reason=hypothesis.rationale,
+            approaches=(f"{engine} で近似する（この手順書の手順）",),
+            limitation="ユーザーサンプルの取り込みは実機で検証していないため、まだ提案しない",
         )
 
     def suggest_adjustments(
@@ -210,6 +227,7 @@ class Kronos2Adapter:
             for alt in recipe.alternatives:
                 score = "" if alt.score is None else f"（スコア {alt.score:.2f}）"
                 lines.append(f"- **{alt.engine}**{score}: {alt.summary}")
+        lines += limitation_sections(recipe)
         if recipe.uncertainties:
             lines += ["", "## 未確定事項・注意", ""]
             lines += [u if u.startswith("  - ") else f"- {u}" for u in recipe.uncertainties]

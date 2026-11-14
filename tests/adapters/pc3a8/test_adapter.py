@@ -163,3 +163,30 @@ def test_adjustment_suggestion(analyze_signal: Analyze, adapter: Pc3a8Adapter) -
     (suggestion,) = adapter.suggest_adjustments(spec, (diff,), recipe)
     assert suggestion.parameter_id == "kva.ampenv.rel1.time"
     assert suggestion.action is StepAction.INCREASE
+
+
+def test_sample_suited_sound_gets_alternatives(
+    adapter: Pc3a8Adapter, sample_spec: SoundSpec
+) -> None:
+    """取り込みは提案せず、KVA・Layer の重ね合わせ・ROM の Keymap を代わりに示す（#21）。"""
+    recipe = generate_recipe(sample_spec, adapter)
+    alt = recipe.sample_alternative
+    assert alt is not None
+    assert alt.limitation is not None and "本文 E-1" in alt.limitation
+    text = "\n".join(alt.approaches)
+    assert "KVA" in text and "RES NOISE" in text and "Keymap" in text
+    assert "名前は挙げない" in text  # 実機で確かめていない Keymap 名は出さない
+    # 再現の限界: 非整数倍音とノイズ
+    assert any("整数倍音以外" in x for x in recipe.limitations)
+    assert any("ノイズ成分" in x for x in recipe.limitations)
+    manual = adapter.manual_instructions(recipe)
+    assert "## サンプルの代わりに" in manual and "## 再現の限界" in manual
+    for word in ("WAV", "インポート", "取り込"):
+        assert word not in manual
+
+
+def test_no_alternative_for_synth_friendly_sound(
+    analyze_signal: Analyze, adapter: Pc3a8Adapter
+) -> None:
+    recipe = adapter.create_recipe(spec_for(analyze_signal, "lead"))
+    assert recipe.sample_alternative is None and recipe.limitations == ()

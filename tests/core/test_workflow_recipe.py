@@ -1,10 +1,17 @@
 """Core のワークフローは FakeSynthAdapter だけでテストする。"""
 
 import pytest
+from pydantic import ValidationError
 
 from synth_ai.adapters.base import CapabilityStatus
 from synth_ai.adapters.fake import FakeSynthAdapter
-from synth_ai.core.sound_spec.models import PatchRecipe, SoundSpec, StepAction
+from synth_ai.core.sound_spec.models import (
+    PatchRecipe,
+    SampleAlternative,
+    SoundSpec,
+    StepAction,
+    SynthesisMethod,
+)
 from synth_ai.core.workflow.recipe import RecipeContractError, generate_recipe
 
 
@@ -59,3 +66,26 @@ def test_vague_steps_are_rejected(lead_spec: SoundSpec) -> None:
     vague = base.steps[0].model_copy(update={"value": None, "target": None})
     with pytest.raises(RecipeContractError, match="neither"):
         generate_recipe(lead_spec, _BrokenAdapter({"steps": (vague,)}))
+
+
+def test_sample_hypothesis_only_when_most_likely(
+    lead_spec: SoundSpec, sample_spec: SoundSpec
+) -> None:
+    assert lead_spec.sample_hypothesis is None  # 減算合成のほうが有力
+    hypothesis = sample_spec.sample_hypothesis
+    assert hypothesis is not None and hypothesis.method is SynthesisMethod.SAMPLE_BASED
+
+
+def test_missing_sample_alternative_is_rejected(sample_spec: SoundSpec) -> None:
+    """サンプルが向く音を、取り込めない機種で説明なしにレシピにしてはいけない。"""
+    assert generate_recipe(sample_spec, FakeSynthAdapter()).sample_alternative is not None
+    with pytest.raises(RecipeContractError, match="alternative"):
+        generate_recipe(sample_spec, _BrokenAdapter({"sample_alternative": None}))
+    # 取り込める機種なら代替の説明は要らない
+    sampler = FakeSynthAdapter(sample_import=CapabilityStatus.SUPPORTED)
+    assert generate_recipe(sample_spec, sampler).sample_alternative is None
+
+
+def test_sample_alternative_needs_explanation() -> None:
+    with pytest.raises(ValidationError):
+        SampleAlternative(reason="ノイズが多い")

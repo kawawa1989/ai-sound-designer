@@ -17,16 +17,22 @@ from synth_ai.adapters.pc3a8.parameters import Layout, ParameterDef, ParameterTa
 from synth_ai.core.calibration.models import CalibrationSet
 from synth_ai.core.comparison.models import AdjustmentSuggestion, Difference
 from synth_ai.core.planning.adjust import suggest_adjustments
-from synth_ai.core.planning.render import describe_intent, describe_target, render_steps
+from synth_ai.core.planning.render import (
+    describe_intent,
+    describe_target,
+    limitation_sections,
+    render_steps,
+)
 from synth_ai.core.planning.roles import CALIBRATION_FEATURES, Role
-from synth_ai.core.planning.subtractive import subtractive_intents
+from synth_ai.core.planning.subtractive import NOISY, subtractive_intents
 from synth_ai.core.sound_spec.models import (
+    Level,
     PatchRecipe,
     QuantTarget,
     RecipeStep,
+    SampleAlternative,
     SoundSpec,
     StepStatus,
-    SynthesisMethod,
 )
 
 ENGINE = "KVA"
@@ -88,6 +94,47 @@ def _with_unit(value: str | float | int, param: ParameterDef | None) -> str:
         # 刻みを確かめていない項目は、本体で選べる値に丸められない（端と 0 は選べる）
         text += "（本体で選べるいちばん近い値）"
     return text
+
+
+INHARMONIC = (Level.VERY_LOW, Level.LOW, Level.MEDIUM)
+
+
+def _limitations(spec: SoundSpec) -> list[str]:
+    """基準音の配置（KVA の発振器 1 つ → LOPASS）では再現しきれない点。"""
+    out = []
+    if spec.timbre.harmonicity in INHARMONIC:
+        out.append(
+            "整数倍音以外の成分が多い。KVA の発振器 1 つでは作れないため、"
+            "ノコギリ波からの近似になる"
+        )
+    if spec.timbre.noisiness in NOISY:
+        out.append("ノイズ成分は、基準音の配置（発振器 1 つ → LOPASS）では足せない")
+    return out
+
+
+def _sample_alternative(spec: SoundSpec) -> SampleAlternative | None:
+    """サンプルの再生が向く音でも、取り込みは提案しない（本文 E-1）。代わりにできることを示す。"""
+    hypothesis = spec.sample_hypothesis
+    if hypothesis is None:
+        return None
+    approaches = ["KVA の発振器で近似する（この手順書の手順。基準音 1025 から作る）"]
+    if spec.timbre.noisiness in NOISY:
+        approaches.append(
+            "ノイズ成分は、別の Layer に発振器 RES NOISE（ノイズ + レゾナンス付きローパス）を置いて"
+            "重ねる。1 つの Layer に発振器を複数置くと、最後の発振器の音しか聞こえない"
+            "（本文 6-4, 6-54, 6-57〜6-58）。Layer を足す操作の手順書はまだない"
+        )
+    approaches.append(
+        "ROM の Keymap（内蔵のサンプル）を音源にした Layer を使う。近い Keymap は本体で聴いて選ぶ。"
+        "このツールは Keymap の一覧を持っていないので、名前は挙げない（本文 6-4）"
+    )
+    return SampleAlternative(
+        reason=hypothesis.rationale,
+        approaches=tuple(approaches),
+        limitation=(
+            "PC3A8 はユーザーサンプルを読み込めないため、参照音そのものは鳴らせない（本文 E-1）"
+        ),
+    )
 
 
 class Pc3a8Adapter:
@@ -152,12 +199,6 @@ class Pc3a8Adapter:
                 "ブロック 2 の LOPASS（1 ブロック）にはレゾナンスの項目がないため、"
                 "レゾナンスは設定しない（本文 6-24）"
             )
-        top = max(spec.hypotheses, key=lambda h: h.confidence, default=None)
-        if top is not None and top.method is SynthesisMethod.SAMPLE_BASED:
-            uncertainties.append(
-                "参照音はサンプルの再生が向いている可能性があるが、PC3A8 はユーザーサンプルを"
-                "読み込めない（本文 E-1）。KVA の減算合成で近似する"
-            )
         uncertainties += [f"参照音: {u}" for u in spec.uncertainties]
 
         rationale = "KVA の発振器・フィルター・AMPENV・ENV2 で減算合成する"
@@ -173,6 +214,8 @@ class Pc3a8Adapter:
             engine=ENGINE,
             rationale=rationale,
             steps=steps,
+            sample_alternative=_sample_alternative(spec),
+            limitations=tuple(_limitations(spec)),
             uncertainties=tuple(uncertainties),
         )
 
@@ -250,6 +293,7 @@ class Pc3a8Adapter:
                 lines.append(f"   - 出典: {s.source_ref or '—'}{check}")
         lines += ["", "## 保存", ""]
         lines += [f"- {n}" for n in SAVE_NOTES]
+        lines += limitation_sections(recipe)
         if recipe.uncertainties:
             lines += ["", "## 未確定事項・注意", ""]
             lines += [u if u.startswith("  - ") else f"- {u}" for u in recipe.uncertainties]

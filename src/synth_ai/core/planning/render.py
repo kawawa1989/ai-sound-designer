@@ -18,7 +18,7 @@ from synth_ai.core.planning.intents import Intent
 from synth_ai.core.planning.protocols import P, RecipeParameter, RecipeTable
 from synth_ai.core.planning.roles import ROLE_LABELS
 from synth_ai.core.sound_spec.features import LABELS, Feature
-from synth_ai.core.sound_spec.models import QuantTarget, RecipeStep, StepStatus
+from synth_ai.core.sound_spec.models import PatchRecipe, QuantTarget, RecipeStep, StepStatus
 
 
 @dataclass
@@ -204,3 +204,24 @@ def render_steps(
             "示した音響目標に合わせて、耳と analyze の結果で調整する"
         )
     return result
+
+
+def limitation_sections(recipe: PatchRecipe) -> list[str]:
+    """手順書の「サンプルの代わりに」「再現の限界」の節（Markdown の行）。"""
+    lines: list[str] = []
+    alt = recipe.sample_alternative
+    if alt is not None:
+        lines += [
+            "",
+            "## サンプルの代わりに",
+            "",
+            f"参照音はサンプルの再生が向いている: {alt.reason}",
+            "",
+        ]
+        if alt.limitation:
+            lines.append(f"- できないこと: {alt.limitation}")
+        lines += [f"- 代わりに: {a}" for a in alt.approaches]
+    if recipe.limitations:
+        lines += ["", "## 再現の限界", ""]
+        lines += [f"- {x}" for x in recipe.limitations]
+    return lines

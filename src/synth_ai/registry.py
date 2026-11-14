@@ -36,7 +36,8 @@ CALIBRATION_DIRS: dict[str, Path] = {
 }
 
 # 機種ごとに送ってよい CC 番号（docs/safety.md「CC を送る条件」。calibrate の CC モードだけで使う）
-ALLOWED_CONTROLS: dict[str, frozenset[int]] = {"pc3a8": frozenset({14, 15})}
+# CC 15 は本体全体の音程を動かすことが分かったので外した（2026-11-14、#40。docs/safety.md）
+ALLOWED_CONTROLS: dict[str, frozenset[int]] = {"pc3a8": frozenset({14})}
 
 ADAPTER_FACTORIES: dict[str, Callable[[], SynthAdapter]] = {
     "fake": FakeSynthAdapter,

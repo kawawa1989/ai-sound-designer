@@ -432,3 +432,20 @@ def test_calibrate_cc_mode_requires_confirmation(
     # CC の設定がないパラメータは CC モードで測れない
     args = ["calibrate", "kva.ampenv.att1.time", "--cc", "--config", str(config)]
     assert CliRunner().invoke(app, args).exit_code == 2
+
+
+def test_calibrate_cc_mode_refuses_cc15(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """CC 15 は本体全体の音程を動かすので送らない（#40）。1027 の Rel1 は CC モードで測れない。"""
+    from synth_ai import registry
+    from tests.infrastructure.fakes import FakePort
+
+    assert 15 not in registry.ALLOWED_CONTROLS["pc3a8"]
+    port = FakePort()
+    monkeypatch.setattr("mido.get_output_names", lambda: ["UR22mkII"])
+    monkeypatch.setattr("mido.open_output", lambda name: port)
+    config = tmp_path / "local.yaml"
+    config.write_text("synth: pc3a8\nmidi:\n  output_port: UR22mkII\n")
+    args = ["calibrate", "kva.ampenv.rel1.time", "--cc", "--config", str(config)]
+    result = CliRunner().invoke(app, args, input="y\n")
+    assert result.exit_code == 2 and "CC 15" in result.output
+    assert port.messages == []

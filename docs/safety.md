@@ -205,6 +205,7 @@ PC3A8 では、このツールは**ノートを鳴らす**（Note On / Off）こ
 | --- | --- | --- |
 | 1025 | KVA BASIC SAW | キャリブレーションの基準の音（2026-11-14 作成）。Program 999 Default Program を編集して保存。下の「基準音 1025 の設定」 |
 | 1026 | KVA CC CAL | **CC キャリブレーション用**（#34）。1025 を元に、LP Frq を G 1（49 Hz）、DSPMOD の LP Frq の Src1 を CC 14、Depth を +10800 ct にする。作り方は `docs/manuals/pc3a8/calibrate_cc.md` |
+| 1027 | KVA ENVCTL CAL | **CC キャリブレーション用**（#37）。1025 を元に、AMPENV の Rel1 Time を 1.60 s、ENVCTL の Release の Source を CC 15、Depth を 50.000x にする。作り方は `docs/manuals/pc3a8/calibrate_cc.md` |
 
 #### 基準音 1025 の設定
 

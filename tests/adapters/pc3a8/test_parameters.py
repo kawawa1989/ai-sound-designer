@@ -232,13 +232,37 @@ def test_cutoff_snaps_to_semitones() -> None:
 
 
 def test_cc_calibration_mapping() -> None:
-    """CC 0 で 49 Hz（G 1）、127 で +10800 ct（25088 Hz、G 10）。"""
+    """CC 0 で 49 Hz（G 1）。CC/128 で +10800 ct に比例（実測で /127 より合う、#37）。"""
     loaded = load_table(ROOT / "data" / "pc3a8_parameters", "KVA")
     assert loaded is not None
     cutoff = loaded.by_id("kva.dspctl.lp_frq")
     assert cutoff is not None and cutoff.cc_calibration is not None
     cc = cutoff.cc_calibration
     assert cc.control in (14, 15)
-    assert cc.value_at(0) == 49 and cc.value_at(127) == pytest.approx(25088)
+    assert cc.divisor == 128
+    assert cc.value_at(0) == 49 and cc.value_at(64) == pytest.approx(49 * 2**4.5)
     assert cc.cc_for(25088) == 127 and cc.cc_for(10) == 0 and cc.cc_for(99999) == 127
-    assert [cc.cc_for(v) for v in (131, 1047, 4186)] == [20, 62, 91]
+    assert [cc.cc_for(v) for v in (131, 1047, 4186)] == [20, 63, 91]
+
+
+def test_envctl_cc_calibration_mapping() -> None:
+    """Rel1 は ENVCTL の倍率で縮む: CC 0 で 1.6 s、CC が上がると 1.6 ÷ 50^(CC/128)。"""
+    loaded = load_table(ROOT / "data" / "pc3a8_parameters", "KVA")
+    assert loaded is not None
+    release = loaded.by_id("kva.ampenv.rel1.time")
+    assert release is not None and release.cc_calibration is not None
+    cc = release.cc_calibration
+    assert cc.control in (14, 15) and cc.rate_depth == 50
+    assert cc.value_at(0) == pytest.approx(1.6)
+    assert cc.value_at(64) == pytest.approx(1.6 / 50**0.5)
+    assert [cc.cc_for(v) for v in (1.6, 0.8, 0.2, 0.06, 0.02)] == [0, 23, 68, 107, 127]
+    assert "÷ 50^(CC/128)" in cc.describe()
+
+
+def test_cc_control_needs_one_depth() -> None:
+    from synth_ai.adapters.base import CcControl
+
+    with pytest.raises(ValueError):
+        CcControl(control=15, base=1.0, program="x")
+    with pytest.raises(ValueError):
+        CcControl(control=15, base=1.0, depth_cents=1200, rate_depth=2, program="x")

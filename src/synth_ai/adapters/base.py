@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import math
 from enum import StrEnum
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from synth_ai.core.comparison.models import AdjustmentSuggestion, Difference
 from synth_ai.core.sound_spec.models import PatchRecipe, SoundSpec
@@ -68,7 +68,9 @@ class AdjustmentAdvisor(Protocol):
 class CcControl(BaseModel):
     """キャリブレーション用の Program で、このパラメータを CC で動かす設定。
 
-    値 = base × 2^(depth_cents × CC / 127 / 1200)。CC 0 で base、127 で depth_cents だけ上がる。
+    x = CC / divisor として、
+    - depth_cents のとき: 値 = base × 2^(depth_cents × x / 1200)（周波数など、セントで上がる値）
+    - rate_depth のとき: 値 = base ÷ rate_depth^x（時間など、速さの倍率で縮む値）
     途中の CC で比例して動くと仮定している（測った曲線と手動の曲線を比べて確かめる）。
     """
 
@@ -76,16 +78,40 @@ class CcControl(BaseModel):
 
     control: int = Field(ge=1, le=119)  # CC 番号
     base: float = Field(gt=0)  # CC 0 のときの値（パラメータの単位）
-    depth_cents: float = Field(gt=0)
+    depth_cents: float | None = Field(default=None, gt=0)
+    rate_depth: float | None = Field(default=None, gt=1)  # CC が最大のときの速さの倍率
+    divisor: Literal[127, 128] = 127  # CC を何で割って 0〜1 にするか
     program: str  # 人が本体で選んでおく Program（例: "1026 KVA CC CAL"）
 
+    @model_validator(mode="after")
+    def _one_depth(self) -> CcControl:
+        if (self.depth_cents is None) == (self.rate_depth is None):
+            raise ValueError("set exactly one of depth_cents or rate_depth")
+        return self
+
+    def _octaves(self, x: float) -> float:
+        """値が CC 0 から何オクターブ動くか（rate_depth のときは下がる）。"""
+        if self.depth_cents is not None:
+            return self.depth_cents * x / 1200
+        assert self.rate_depth is not None
+        return -math.log2(self.rate_depth) * x
+
     def value_at(self, cc: int) -> float:
-        return float(self.base * 2.0 ** (self.depth_cents * cc / 127 / 1200))
+        return float(self.base * 2.0 ** self._octaves(cc / self.divisor))
 
     def cc_for(self, value: float) -> int:
         """この値にいちばん近い CC。"""
-        cc = round(127 * 1200 * math.log2(value / self.base) / self.depth_cents)
+        full = self._octaves(1.0)
+        cc = round(self.divisor * math.log2(value / self.base) / full)
         return min(max(cc, 0), 127)
+
+    def describe(self) -> str:
+        """測定条件に残す換算の説明。"""
+        if self.depth_cents is not None:
+            formula = f"{self.base:g} × 2^({self.depth_cents:g} ct × CC/{self.divisor})"
+        else:
+            formula = f"{self.base:g} ÷ {self.rate_depth:g}^(CC/{self.divisor})"
+        return f"値 = {formula}、比例を仮定"
 
 
 class ParameterInfo(BaseModel):

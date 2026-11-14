@@ -194,6 +194,52 @@ def _with_unit(value: str | float | int, param: ParameterDef | None) -> str:
     return text
 
 
+def _short_value(value: str | float | int, param: ParameterDef | None) -> str:
+    """一覧の表に書く短い値。本体で選べる値に丸めていない値は「約」を付ける。"""
+    if param is None or isinstance(value, str):
+        return str(value)
+    unit = f" {param.unit}" if param.unit else ""
+    if param.is_semitone_hz and value > 0:
+        return f"{value:g}{unit}（{hz_to_note(float(value))[0]}）"
+    if not param.step and not param.grid() and value not in (0, param.min, param.max):
+        return f"約 {float(value):.3g}{unit}" if abs(value) < 1000 else f"約 {value:.0f}{unit}"
+    return f"{value:g}{unit}"
+
+
+def _same_as_base(value: str | float | int, param: ParameterDef | None) -> bool:
+    if param is None or param.base_value is None:
+        return False
+    if isinstance(value, str) or isinstance(param.base_value, str):
+        return str(value) == str(param.base_value)
+    return abs(float(value) - float(param.base_value)) < 1e-9
+
+
+def _value_table(recipe: PatchRecipe, table: ParameterTable | None) -> list[str]:
+    """設定する値だけを並べた表（理由と出典は「手順」に書く）。"""
+    base = table.layout.program if table else "基準音"
+    lines = [
+        "## 設定する値",
+        "",
+        f"{base} から、上から順に変える。「{base.split()[0]} のまま」の項目は触らなくてよい。"
+        "「約」の値は、本体で選べるいちばん近い値にする",
+        "",
+        "| # | ページ | 項目 | 値 |",
+        "| --- | --- | --- | --- |",
+    ]
+    for s in recipe.steps:
+        param = table.by_id(s.parameter_id) if table and s.parameter_id else None
+        if s.value is not None:
+            value = f"**{_short_value(s.value, param)}**"
+            if _same_as_base(s.value, param):
+                value = f"{_short_value(s.value, param)}（{base.split()[0]} のまま）"
+        elif s.target is not None:
+            value = f"目標 {describe_target(s.target)} に合わせて調整"
+        else:
+            value = "—"
+        lines.append(f"| {s.order} | {s.page} | {s.parameter} | {value} |")
+    return [*lines, ""]
+
+
 INHARMONIC = (Level.VERY_LOW, Level.LOW, Level.MEDIUM)
 
 
@@ -375,14 +421,15 @@ class Pc3a8Adapter:
             f"- 理由: {recipe.rationale}",
             "- このツールは本体の設定を変えない。次の手順を本体の Program Editor で行う",
             "",
-            "## 準備",
-            "",
         ]
+        if recipe.steps:
+            lines += _value_table(recipe, table)
+        lines += ["## 準備", ""]
         lines += [f"1. {p}" for p in _preparation(table.layout if table else None)]
         if recipe.steps:
             lines += [
                 "",
-                "## 手順",
+                "## 手順（理由と出典）",
                 "",
                 "ページ（ソフトボタン）の順に設定する。"
                 "ボタンが見当たらなければ **more** で切り替える（本文 6-12）。"

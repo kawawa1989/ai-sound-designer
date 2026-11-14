@@ -426,3 +426,13 @@ def test_env2_decay_time_from_cutoff_curve() -> None:
     seconds = _filter_decay_seconds(lp, hz_start, hz_end, 746.7)
     assert seconds is not None and 1.2 < seconds < 1.45
     assert FILTER_DECAY_OFFSET_MS > 0 and not math.isnan(seconds)
+
+
+def test_manual_starts_with_value_table(analyze_signal: Analyze, adapter: Pc3a8Adapter) -> None:
+    """手順書の先頭に、設定する値だけの表を出す。基準音と同じ値は「のまま」と書く。"""
+    text = adapter.manual_instructions(adapter.create_recipe(spec_for(analyze_signal, "bass")))
+    table = text.split("## 設定する値", 1)[1].split("## 準備", 1)[0]
+    assert "| ALG › ブロック 1（2 スロット） | Oscillator | SAW（1025 のまま） |" in table
+    assert "| DSPMOD › LP Frq | Src1 | **ENV2** |" in table
+    assert "理由" not in table
+    assert text.index("## 設定する値") < text.index("## 手順（理由と出典）")

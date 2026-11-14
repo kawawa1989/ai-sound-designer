@@ -67,6 +67,36 @@ def _cutoff_for(
     return cutoff.shift_octaves(value, shift.octaves) if shift else value
 
 
+# ENV2 Dec1 Time を「暗くなるまでの時間」から出すときの、解析の遅れ（ms）。
+# 1028 で ENV2 Dec1 Time を 0.1〜3.2 s に変えて測った 6 点の、計算との差の平均（74〜89 ms、#40）。
+# 解析が発音直後の明るさを最初の 100 ms の平均で取るためと考えている
+FILTER_DECAY_OFFSET_MS = 80.0
+
+
+def _filter_decay_seconds(
+    curve: CalibrationCurve, hz_start: float, hz_end: float, target_ms: float
+) -> float | None:
+    """暗くなるまでの時間を target_ms にする ENV2 Dec1 Time（秒）。
+
+    hz_start / hz_end は発音直後と終盤のカットオフ（曲線を測った C4 のときの値）。
+    ENV2 は Dec1 Time をかけて 100% から 0% まで一定の速さで下がり、Depth（セント）を掛けると、
+    カットオフは対数で一定の速さで下がる。暗くなるまでの時間は、明るさが発音直後と終盤の中間
+    （対数）になるまでなので、LP Frq の曲線でその明るさになるカットオフが、対数で何割下がった
+    ところかを求め、Dec1 Time = (目標 − 解析の遅れ) ÷ その割合 とする。
+    """
+    if hz_start <= hz_end or hz_end <= 0:
+        return None
+    middle = math.sqrt(curve.predict(hz_start) * curve.predict(hz_end))
+    hz_middle = curve.inverse(middle)
+    if not hz_middle:
+        return None
+    remaining = math.log2(max(hz_middle, hz_end) / hz_end) / math.log2(hz_start / hz_end)
+    fraction = 1.0 - remaining
+    if fraction <= 0:
+        return None
+    return max(target_ms - FILTER_DECAY_OFFSET_MS, 0.0) / fraction / 1000.0
+
+
 def _initial_value_fn(
     spec: SoundSpec, table: ParameterTable | None, calibrations: CalibrationSet
 ) -> Callable[[ParameterDef, QuantTarget], float | None]:
@@ -75,6 +105,9 @@ def _initial_value_fn(
     - 時間の項目: 目標の時間（ms → 秒）
     - DSPMOD の Depth（ENV2 が LP Frq を動かす量、ct）: LP Frq の曲線で、発音直後と終盤の
       明るさに当たるカットオフを求め、その差をセントにする（ENV2 は発音直後 100%、終盤 0%）
+      （1028 で、ENV2 が 100% のときに Depth の分だけ上がることを確かめた。#40）
+    - ENV2 Dec1 Time: LP Frq の曲線から計算する（_filter_decay_seconds）。暗くなるまでの
+      時間は LP Frq と Depth でも変わるため、1028 で測った曲線（reference/）は計算の確認に使う
     """
     f0 = spec.pitch.f0_hz if spec.pitch else None
     cutoff = table.by_role(Role.FILTER_CUTOFF) if table else None
@@ -93,6 +126,18 @@ def _initial_value_fn(
             if not hz_start or not hz_end:
                 return None
             return 1200 * math.log2(cutoff.clamp(hz_start) / cutoff.clamp(hz_end))
+        if Role.FILTER_EG_DECAY.value in param.roles and param.unit == "s" and curve is not None:
+            start = target_of(spec, Feature.BRIGHTNESS_START)
+            end = target_of(spec, Feature.BRIGHTNESS_END)
+            if start is not None and end is not None and target.unit == "ms":
+                hz_start, hz_end = curve.inverse(start.value), curve.inverse(end.value)
+                seconds = (
+                    _filter_decay_seconds(curve, hz_start, hz_end, target.value)
+                    if hz_start and hz_end
+                    else None
+                )
+                if seconds is not None:
+                    return seconds
         return _time_value(param, target)
 
     return initial

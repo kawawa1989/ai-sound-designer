@@ -214,6 +214,8 @@ def test_project_calibration_values() -> None:
         "kva.ampenv.decay.level",
         "kva.ampenv.rel1.time",
         "kva.dspctl.lp_frq",
+        "kva.dspmod.lp_frq.depth",
+        "kva.env2.decay.time",
     }
     assert min(measured["kva.dspctl.lp_frq"].calibration_values) > 0
     assert 25088 in measured["kva.dspctl.lp_frq"].calibration_values  # 基準音の値
@@ -238,7 +240,7 @@ def test_cc_calibration_mapping() -> None:
     cutoff = loaded.by_id("kva.dspctl.lp_frq")
     assert cutoff is not None and cutoff.cc_calibration is not None
     cc = cutoff.cc_calibration
-    assert cc.control in (14, 15)
+    assert cc.control == 14
     assert cc.divisor == 128
     assert cc.value_at(0) == 49 and cc.value_at(64) == pytest.approx(49 * 2**4.5)
     assert cc.cc_for(25088) == 127 and cc.cc_for(10) == 0 and cc.cc_for(99999) == 127
@@ -266,3 +268,34 @@ def test_cc_control_needs_one_depth() -> None:
         CcControl(control=15, base=1.0, program="x")
     with pytest.raises(ValueError):
         CcControl(control=15, base=1.0, depth_cents=1200, rate_depth=2, program="x")
+
+
+def test_depth_cc_calibration_mapping() -> None:
+    """Depth は Src2 の MinDepth 0 〜 MaxDepth 10800 ct を CC 14 で動かす（CC に正比例と仮定）。"""
+    loaded = load_table(ROOT / "data" / "pc3a8_parameters", "KVA")
+    assert loaded is not None
+    depth = loaded.by_id("kva.dspmod.lp_frq.depth")
+    assert depth is not None and depth.cc_calibration is not None
+    cc = depth.cc_calibration
+    assert cc.control == 14 and cc.span == 10800 and cc.divisor == 128
+    assert cc.value_at(0) == 0 and cc.value_at(64) == pytest.approx(5400)
+    assert [cc.cc_for(v) for v in (0, 1200, 10800, -100, 99999)] == [0, 14, 127, 0, 127]
+    assert "0 + 10800 × CC/128" in cc.describe()
+
+
+def test_env2_decay_calibration_values() -> None:
+    loaded = load_table(ROOT / "data" / "pc3a8_parameters", "KVA")
+    assert loaded is not None
+    decay = loaded.by_id("kva.env2.decay.time")
+    assert decay is not None and decay.cc_calibration is None  # ENV2 の時間は CC で動かせない
+    assert decay.calibration_values == (0.1, 0.2, 0.4, 0.8, 1.6, 3.2)
+
+
+def test_cc_control_span_allows_zero_base() -> None:
+    from synth_ai.adapters.base import CcControl
+
+    assert CcControl(control=14, base=0, span=127, program="x").value_at(127) == 127
+    with pytest.raises(ValueError):
+        CcControl(control=14, base=0, depth_cents=1200, program="x")
+    with pytest.raises(ValueError):
+        CcControl(control=14, base=1, span=100, rate_depth=2, program="x")

@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0",
+  "synth_id": "pc3a8",
+  "parameter_id": "kva.dspmod.lp_frq.depth",
+  "feature": "brightness_end",
+  "unit": "x f0",
+  "conditions": "1028 KVA ENV2 CAL / 1028 KVA ENV2 CAL を CC 14 で設定（値 = 0 + 10800 × CC/128、比例を仮定） / C4 / velocity 100 / hold 1.5s / tail 2s",
+  "measured_at": "2026-11-14",
+  "reference_note": "C4",
+  "parameter_scale": "linear",
+  "points": [
+    {
+      "parameter_value": 0.0,
+      "feature_value": 2.317
+    },
+    {
+      "parameter_value": 1181.25,
+      "feature_value": 2.366
+    },
+    {
+      "parameter_value": 2362.5,
+      "feature_value": 2.524
+    },
+    {
+      "parameter_value": 3628.125,
+      "feature_value": 3.01
+    },
+    {
+      "parameter_value": 4809.375,
+      "feature_value": 3.856
+    },
+    {
+      "parameter_value": 5990.625,
+      "feature_value": 5.1
+    },
+    {
+      "parameter_value": 7171.875,
+      "feature_value": 6.741
+    },
+    {
+      "parameter_value": 8437.5,
+      "feature_value": 8.855
+    },
+    {
+      "parameter_value": 9618.75,
+      "feature_value": 11.052
+    },
+    {
+      "parameter_value": 10715.625,
+      "feature_value": 13.219
+    }
+  ]
+}

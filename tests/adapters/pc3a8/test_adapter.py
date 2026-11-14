@@ -313,7 +313,7 @@ def test_cc_curves_are_not_used_for_recipes() -> None:
 
     directory = TABLE_DIR.parent / "pc3a8_calibration"
     curves = CalibrationSet.load(directory, "pc3a8")
-    assert len(curves) == 5
+    assert len(curves) == 5  # reference/ と cc/ の曲線は読まない
     lp = curves.get("kva.dspctl.lp_frq", "brightness_end")
     assert lp is not None and "CC 14" not in lp.conditions
     cc = CalibrationSet.load(directory / "cc", "pc3a8").get("kva.dspctl.lp_frq", "brightness_end")
@@ -321,3 +321,32 @@ def test_cc_curves_are_not_used_for_recipes() -> None:
     # 手動の曲線と 2% 以内で合う（2026-11-14）
     for p in cc.points:
         assert p.feature_value == pytest.approx(lp.predict(p.parameter_value), rel=0.02)
+
+
+def test_env2_decay_time_from_cutoff_curve() -> None:
+    """ENV2 Dec1 Time は LP Frq の曲線から計算する（#40）。
+
+    1028 で測った曲線（reference/）と、#23 の参照音の試行 006（1.34 s で 707 ms）で確かめた。
+    """
+    import math
+
+    from synth_ai.adapters.pc3a8.adapter import FILTER_DECAY_OFFSET_MS, _filter_decay_seconds
+    from synth_ai.core.calibration.models import CalibrationCurve
+
+    directory = TABLE_DIR.parent / "pc3a8_calibration"
+    lp = CalibrationCurve.model_validate_json(
+        (directory / "kva.dspctl.lp_frq__brightness_end.json").read_text()
+    )
+    measured = CalibrationCurve.model_validate_json(
+        (directory / "reference" / "kva.env2.decay.time__brightness_decay_time.json").read_text()
+    )
+    # 1028: LP Frq 49 Hz、Depth 7200 ct（3136 Hz から 49 Hz に下がる）
+    for point in measured.points:
+        seconds = _filter_decay_seconds(lp, 49 * 2 ** (7200 / 1200), 49, point.feature_value)
+        assert seconds == pytest.approx(point.parameter_value, rel=0.1, abs=0.02)
+    # #23 の参照音（発音直後 13.7、終盤 2.5、暗くなるまで 747 ms）は 1.3 s 前後。0.74 s では速すぎた
+    hz_start, hz_end = lp.inverse(13.7), lp.inverse(2.5)
+    assert hz_start is not None and hz_end is not None
+    seconds = _filter_decay_seconds(lp, hz_start, hz_end, 746.7)
+    assert seconds is not None and 1.2 < seconds < 1.45
+    assert FILTER_DECAY_OFFSET_MS > 0 and not math.isnan(seconds)

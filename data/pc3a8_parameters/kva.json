@@ -215,8 +215,27 @@
       ],
       "verified": true,
       "source_ref": "Musician's Guide 本文 6-25, 6-56／実機の画面で確認（2026-11-14）（−10800〜10800 ct）",
-      "notes": "Src1 が最大のときに LP Frq を動かす量（セント）。1200 ct で 1 オクターブ",
-      "min": -10800
+      "notes": "Src1 が最大のときに LP Frq を動かす量（セント）。1200 ct で 1 オクターブ。CC での測定は Src2 の MinDepth / MaxDepth を DptCtl（CC 14）で動かす（本文 6-26、6-31）",
+      "min": -10800,
+      "calibration_values": [
+        0,
+        1200,
+        2400,
+        3600,
+        4800,
+        6000,
+        7200,
+        8400,
+        9600,
+        10800
+      ],
+      "cc_calibration": {
+        "control": 14,
+        "base": 0,
+        "span": 10800,
+        "divisor": 128,
+        "program": "1028 KVA ENV2 CAL"
+      }
     },
     {
       "id": "kva.ampenv.mode",
@@ -480,7 +499,15 @@
       ],
       "source_ref": "Musician's Guide 本文 6-43〜6-45",
       "verified": true,
-      "notes": "刻みは Att1 と同じと思われるが、この項目では要確認"
+      "calibration_values": [
+        0.1,
+        0.2,
+        0.4,
+        0.8,
+        1.6,
+        3.2
+      ],
+      "notes": "刻みは Att1 と同じと思われるが、この項目では要確認。レシピの値は LP Frq の曲線から計算する（暗くなるまでの時間は LP Frq と Depth でも変わるため）。Program 1028 で手で値を変えて測った曲線は data/pc3a8_calibration/reference/ に置き、計算の確認に使う（ENV2 の時間は CC で動かせない。本文 6-45）"
     },
     {
       "id": "kva.env2.decay.level",
